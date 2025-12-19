@@ -173,9 +173,9 @@ class Camera{
                 );
 
                 this.game.player.cameraArm.position.z += e.deltaY * this.zoomSpeed * this.game.player.cameraZi;
-                this.game.player.cameraArm.position.z = Math.max(
+                this.game.player.cameraArm.position.z = Math.min(
                     this.minZoomScale * this.game.player.cameraZi,
-                    Math.min(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
+                    Math.max(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
                 );
             }, { passive: false });
         } else{
