@@ -1,15 +1,19 @@
 import * as THREE from "three";
+import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
+import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-
+const locked=true;
 //classes
 class InputHandler {
     constructor(game){
         this.game = game;
-        window.addEventListener("click", () => {
-            document.body.requestPointerLock();
-        });
+        if (locked){
+            window.addEventListener("click", () => {
+                document.body.requestPointerLock();
+            });
+        }
         window.addEventListener("keydown", e => {
             if (((e.key === "ArrowUp")||(e.key === "w")||(e.key === "W"))&&(this.game.keyFwd==false)){
                 this.game.keyFwd=true;
@@ -56,7 +60,7 @@ class InputHandler {
 class Block{
     constructor(game){
         this.game=game;
-        this.geo = new THREE.BoxGeometry(5,1,5);
+        this.geo = new THREE.BoxGeometry(500,1,500);
         this.mat= new THREE.MeshStandardMaterial({
             color: 0xcffffff,
             flatShading: true
@@ -71,42 +75,55 @@ class Player{
     constructor(game){
         this.game=game;
         // Chassis
-        this.chassisGeo = new THREE.BoxGeometry(2,1,3);
-        this.mat= new THREE.MeshStandardMaterial({
-            color: 0xcffffff,
-            flatShading: true
-        });
-        this.chassis= new THREE.Mesh(this.chassisGeo,this.mat);
+        this.chassis= new THREE.Object3D();
         this.game.scene.add(this.chassis)
         // Turret Pivot
         this.turretPivot= new THREE.Object3D();
-        this.turretPivot.position.set(0, 1 ,0.9)
+        this.turretPivot.position.set(0, 212, 39)
         this.chassis.add(this.turretPivot)
         // Turret
-        this.turretGeo = new THREE.CylinderGeometry(0.3,0.6,1,16);
-        this.turret = new THREE.Mesh(this.turretGeo, this.mat);
+        this.turret= new THREE.Object3D();
         this.turretPivot.add(this.turret);
         // Gun Pivot
         this.gunPivot= new THREE.Object3D();
         this.turretPivot.add(this.gunPivot)
         // Gun
-        this.gunGeo = new THREE.CylinderGeometry(0.1,0.1,1,16);
-        this.gun= new THREE.Mesh(this.gunGeo,this.mat);
-        this.gun.position.set(0,0.2,-0.8);
-        this.gun.rotation.x= - Math.PI/3;
+        this.gun= new THREE.Object3D();
+        this.gun.position.set(0,58,235);
         this.gunPivot.add(this.gun);
+        // Camera Pivot
+        this.cameraPivot= new THREE.Object3D();
+        this.turretPivot.add(this.cameraPivot)
         // Camera Arm
         this.cameraArm = new THREE.Object3D();
-        this.cameraArm.position.set(0, 1, 3); 
-        this.gunPivot.add(this.cameraArm);
-        this.cameraArm.add(this.game.camera.camera)
+        this.cameraXi=0;
+        this.cameraYi=500;
+        this.cameraZi=-1500;
+        this.cameraArm.position.set(this.cameraXi, this.cameraYi, this.cameraZi); 
+        this.cameraArm.rotation.y=Math.PI;
+        this.cameraPivot.add(this.cameraArm);
+        if (locked){
+            this.cameraArm.add(this.game.camera.camera)
+        }
+        this.loadModels();
+    }
+    loadModels(){
+        this.game.loader.load("/assets/chassis.glb", (gltf) => {
+            this.chassis.add(gltf.scene);
+        });
+        this.game.loader.load("/assets/turret.glb", (gltf) => {
+            this.turret.add(gltf.scene);
+        });
+        this.game.loader.load("/assets/gun.glb", (gltf) => {
+            this.gun.add(gltf.scene);
+        });
     }
     update(){
         if (this.game.keyFwd){
-            this.chassis.translateZ(-1);
+            this.chassis.translateZ(1);
         }
         if (this.game.keyBwd){
-            this.chassis.translateZ(1);
+            this.chassis.translateZ(-1);
         }
         if (this.game.keyRight){
             this.chassis.rotation.y-=0.3;
@@ -115,10 +132,10 @@ class Player{
             this.chassis.rotation.y+=0.3;
         }
         if (this.game.keyJump){
-            this.chassis.rotation.x+=0.1;
+            this.chassis.rotation.x-=0.1;
         }
         if (this.game.keySneak){
-            this.chassis.rotation.x-=0.1;
+            this.chassis.rotation.x+=0.1;
         }
     }
 };
@@ -129,31 +146,51 @@ class Camera{
         this.fov = 75;
         this.aspect = this.game.width/this.game.height;
         this.nearLimit = 0.1; //<near no render
-        this.farLimit = 50; //>far no render
+        this.farLimit = 50000; //>far no render
         this.camera = new THREE.PerspectiveCamera(this.fov,this.aspect,this.nearLimit,this.farLimit);
-        this.camera.position.z =5;
-        this.yaw = 0;
-        this.pitch = 0;
-        window.addEventListener("mousemove", e => {
-            this.yaw   -= e.movementX * 0.002;
-            this.pitch -= e.movementY * 0.002;
-            this.pitch = Math.max(-0.6, Math.min(0.3, this.pitch));
-        });
-        this.minZoom = 2;
-        this.maxZoom = 10;
-        this.zoomSpeed = 0.002;
-        window.addEventListener("wheel", e => {
-            this.game.player.cameraArm.position.z += e.deltaY * this.zoomSpeed;
+        if (locked){
+            this.yaw = 0;
+            this.pitch = 0;
+            window.addEventListener("mousemove", e => {
+                this.yaw   -= e.movementX * 0.002;
+                this.pitch -= e.movementY * 0.002;
+                this.pitch = Math.max(-0.1, Math.min(0.05, this.pitch));
+            });
+            this.minZoomScale = 0.7;
+            this.maxZoomScale = 1.5;
+            this.zoomSpeed = 0.001;
+            window.addEventListener("wheel", e => {
+                this.game.player.cameraArm.position.x += e.deltaY * this.zoomSpeed * this.game.player.cameraXi;
+                this.game.player.cameraArm.position.x = Math.max(
+                    this.minZoomScale * this.game.player.cameraXi,
+                    Math.min(this.maxZoomScale * this.game.player.cameraXi, this.game.player.cameraArm.position.x)
+                );
 
-            this.game.player.cameraArm.position.z = Math.max(
-                this.minZoom,
-                Math.min(this.maxZoom, this.cameraArm.position.z)
-            );
-        });
+                this.game.player.cameraArm.position.y += e.deltaY * this.zoomSpeed * this.game.player.cameraYi;
+                this.game.player.cameraArm.position.y = Math.max(
+                    this.minZoomScale * this.game.player.cameraYi,
+                    Math.min(this.maxZoomScale * this.game.player.cameraYi, this.game.player.cameraArm.position.y)
+                );
+
+                this.game.player.cameraArm.position.z += e.deltaY * this.zoomSpeed * this.game.player.cameraZi;
+                this.game.player.cameraArm.position.z = Math.max(
+                    this.minZoomScale * this.game.player.cameraZi,
+                    Math.min(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
+                );
+            }, { passive: false });
+        } else{
+            this.camera.position.set(0,900,-800);
+            this.controls = new OrbitControls(this.camera, this.game.renderer.domElement)
+        }
+        
     }
     update(){
-        this.game.player.turretPivot.rotation.y = this.yaw;
-        this.game.player.gunPivot.rotation.x = this.pitch;
+        console.log(this.game.player.chassis.position)
+        if (locked){
+            this.game.player.turretPivot.rotation.y = this.yaw;
+            this.game.player.cameraPivot.rotation.x = this.pitch;
+            this.game.player.gunPivot.rotation.x = -this.pitch;
+        }
     }
 };
 
@@ -167,7 +204,7 @@ class Game{
         document.body.appendChild(this.renderer.domElement);
         // Scene
         this.scene = new THREE.Scene();
-        this.light=new THREE.HemisphereLight(0x0099ff, 0xaa5500)
+        this.light = new THREE.HemisphereLight(0xffffff,0x111111,1.2);
         this.scene.add(this.light);
         // Game Keys
         this.input=new InputHandler(this);
@@ -177,8 +214,21 @@ class Game{
         this.keyLeft=false;
         this.keyJump=false;
         this.keySneak=false;
+        this.loader= new GLTFLoader();
         // Camera
         this.camera=new Camera(this)
+        // Environment
+        this.pmrem = new THREE.PMREMGenerator(this.renderer);
+        this.pmrem.compileEquirectangularShader();
+        new RGBELoader()
+            .setPath("/assets/")
+            .load("studio.hdr", (hdr) => {
+                this.envMap = this.pmrem.fromEquirectangular(hdr).texture;
+                this.scene.environment = this.envMap;
+                this.scene.background = this.envMap;
+                hdr.dispose();
+                this.pmrem.dispose();
+            });
         // Player
         this.player=new Player(this);
         this.test=new Block(this);
