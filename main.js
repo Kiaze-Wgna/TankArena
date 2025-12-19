@@ -185,7 +185,6 @@ class Camera{
         
     }
     update(){
-        console.log(this.game.player.chassis.position)
         if (locked){
             this.game.player.turretPivot.rotation.y = this.yaw;
             this.game.player.cameraPivot.rotation.x = this.pitch;
