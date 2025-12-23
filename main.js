@@ -4,7 +4,10 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=true;
+const locked=false;
+const chassisBoxLength=690
+const chassisBoxWidth=463
+const chassisBoxHeight=195
 //classes
 class InputHandler {
     constructor(game){
@@ -71,15 +74,68 @@ class Block{
     }
 };
 
+class Terrain{
+    constructor(game){
+        this.game=game
+        this.geometry = new THREE.PlaneGeometry(20000, 20000,200,200);
+        this.geometry.rotateX(-Math.PI / 2);
+        this.pos = this.geometry.attributes.position;
+        for (let i = 0; i < this.pos.count; i++) {
+            this.x = this.pos.getX(i);
+            this.z = this.pos.getZ(i);
+            this.pos.setY(i, this.heightAt(this.x, this.z));
+        }
+        this.pos.needsUpdate = true;
+        this.geometry.computeVertexNormals();
+        
+        this.mat= new THREE.MeshStandardMaterial({
+            color: 0x7CFC00,
+        });
+        this.mat.wireframe = true;
+        this.terrain = new THREE.Mesh(this.geometry, this.mat);
+        this.terrain.receiveShadow = true;
+        this.game.scene.add(this.terrain);
+    }
+    heightAt(x, z) {
+        let y = 0;
+    
+        let amplitude = 300;
+        let frequency = 0.0003;
+    
+        for (let i = 0; i < 5; i++) {
+            const nx = x * frequency;
+            const nz = z * frequency;
+    
+            y += Math.sin(nx + Math.sin(nz * 1.7)) * amplitude;
+            y += Math.cos(nz + Math.cos(nx * 1.3)) * amplitude * 0.5;
+    
+            amplitude *= 0.5;
+            frequency *= 2.2;
+        }
+    
+        return y;
+    }
+}
+
 class Player{
     constructor(game){
         this.game=game;
         // Chassis
         this.chassis= new THREE.Object3D();
         this.game.scene.add(this.chassis)
+        // Collision
+        this.collisionBox= new THREE.BoxGeometry(chassisBoxWidth,chassisBoxHeight,chassisBoxLength)
+        this.collisionMat= new THREE.MeshStandardMaterial({
+            color: 0xcffffff,
+            flatShading:true
+        });
+        this.collision= new THREE.Mesh(this.collisionBox,this.collisionMat);
+        this.collision.position.y=chassisBoxHeight/2
+        this.collision.position.z=-6
+        this.chassis.add(this.collision)
         // Turret Pivot
         this.turretPivot= new THREE.Object3D();
-        this.turretPivot.position.set(0, 212, 39)
+        this.turretPivot.position.set(0, 210, 39)
         this.chassis.add(this.turretPivot)
         // Turret
         this.turret= new THREE.Object3D();
@@ -132,7 +188,7 @@ class Player{
             this.chassis.rotation.y+=0.3;
         }
         if (this.game.keyJump){
-            this.chassis.rotation.x-=0.1;
+            this.chassis.position.y+=3;
         }
         if (this.game.keySneak){
             this.chassis.rotation.x+=0.1;
@@ -214,6 +270,8 @@ class Game{
         this.keyJump=false;
         this.keySneak=false;
         this.loader= new GLTFLoader();
+        //Terrain
+        this.terrain=new Terrain(this)
         // Camera
         this.camera=new Camera(this)
         // Environment
