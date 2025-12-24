@@ -4,7 +4,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=false;
+const locked=true;
 var physics=false
 const tankWidth=3.7
 const chassisBoxLength=690
@@ -15,7 +15,7 @@ const tankLength=chassisBoxLength/pixelPerMeter
 const tankHeight=chassisBoxHeight/pixelPerMeter
 const playerMass=60000
 const physicsSettings=[0.4,0.2,9.8]
-const timescale=0.5
+const timescale=1
 const outBoundRate=100
 //classes
 class InputHandler {
@@ -261,6 +261,22 @@ class CObject{
         this.getNormals()
         this.sumForces()
     }
+    applyNormalVelocityConstraint(normal) {
+        let v = new THREE.Vector3(
+            this.velocityX,
+            this.velocityY,
+            this.velocityZ
+        );
+    
+        let vn = v.dot(normal);
+    
+        if (vn < 0) {
+            v.addScaledVector(normal, -vn);
+            this.velocityX = v.x;
+            this.velocityY = v.y;
+            this.velocityZ = v.z;
+        }
+    }    
     resetForces(){
         this.forcesFR=[0,0,0]
         this.forcesFL=[0,0,0]
@@ -328,55 +344,59 @@ class CObject{
             this.touBL=true
         }
 
-        this.weightFR= this.object.mass * this.g * (wFR/wTot) + (this.terrain.heightAt(this.pFR.x,this.pFR.z)-this.pFR.y)*outBoundRate
-        this.weightFL= this.object.mass * this.g * (wFL/wTot) + (this.terrain.heightAt(this.pFL.x,this.pFL.z)-this.pFL.y)*outBoundRate
-        this.weightBR= this.object.mass * this.g * (wBR/wTot) + (this.terrain.heightAt(this.pBR.x,this.pBR.z)-this.pBR.y)*outBoundRate
-        this.weightBL= this.object.mass * this.g * (wBL/wTot) + (this.terrain.heightAt(this.pBL.x,this.pBL.z)-this.pBL.y)*outBoundRate
+        this.weightFR= this.object.mass * this.g * (wFR/wTot)// + (this.terrain.heightAt(this.pFR.x,this.pFR.z)-this.pFR.y)*outBoundRate
+        this.weightFL= this.object.mass * this.g * (wFL/wTot)// + (this.terrain.heightAt(this.pFL.x,this.pFL.z)-this.pFL.y)*outBoundRate
+        this.weightBR= this.object.mass * this.g * (wBR/wTot)// + (this.terrain.heightAt(this.pBR.x,this.pBR.z)-this.pBR.y)*outBoundRate
+        this.weightBL= this.object.mass * this.g * (wBL/wTot)// + (this.terrain.heightAt(this.pBL.x,this.pBL.z)-this.pBL.y)*outBoundRate
     
     
         if (this.touFR){
             this.touFR=false
             var dydx=((this.terrain.heightAt(this.pFR.x+this.accuracy,this.pFR.z)-this.terrain.heightAt(this.pFR.x-this.accuracy,this.pFR.z))/(2*this.accuracy))/this.pixelPerMeter
             var dydz=((this.terrain.heightAt(this.pFR.x,this.pFR.z+this.accuracy)-this.terrain.heightAt(this.pFR.x,this.pFR.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            this.forcesFR[0]-=dydx*this.weightFR
-            this.normalFR[0]= -dydx*this.weightFR
-            this.forcesFR[1]+=this.weightFR
-            this.normalFR[1]=this.weightFR
-            this.forcesFR[2]-=dydz*this.weightFR
-            this.normalFR[2]= -dydz*this.weightFR
+            
+            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
+            this.forcesFR[0] += normal.x * this.weightFR;
+            this.forcesFR[1] += normal.y * this.weightFR;
+            this.forcesFR[2] += normal.z * this.weightFR;
+
+            this.applyNormalVelocityConstraint(normal);
         }
         if (this.touFL){
             this.touFL=false
             var dydx=((this.terrain.heightAt(this.pFL.x+this.accuracy,this.pFL.z)-this.terrain.heightAt(this.pFL.x-this.accuracy,this.pFL.z))/(2*this.accuracy))/this.pixelPerMeter
             var dydz=((this.terrain.heightAt(this.pFL.x,this.pFL.z+this.accuracy)-this.terrain.heightAt(this.pFL.x,this.pFL.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            this.forcesFL[0]-=dydx*this.weightFL
-            this.normalFL[0]= -dydx*this.weightFL
-            this.forcesFL[1]+=this.weightFL
-            this.normalFL[1]=this.weightFL
-            this.forcesFL[2]-=dydz*this.weightFL
-            this.normalFL[2]= -dydz*this.weightFL
+            
+            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
+            this.forcesFL[0] += normal.x * this.weightFL;
+            this.forcesFL[1] += normal.y * this.weightFL;
+            this.forcesFL[2] += normal.z * this.weightFL;
+
+            this.applyNormalVelocityConstraint(normal);
         }
         if (this.touBR){
             this.touBR=false
             var dydx=((this.terrain.heightAt(this.pBR.x+this.accuracy,this.pBR.z)-this.terrain.heightAt(this.pBR.x-this.accuracy,this.pBR.z))/(2*this.accuracy))/this.pixelPerMeter
             var dydz=((this.terrain.heightAt(this.pBR.x,this.pBR.z+this.accuracy)-this.terrain.heightAt(this.pBR.x,this.pBR.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            this.forcesBR[0]-=dydx*this.weightBR
-            this.normalBR[0]= -dydx*this.weightBR
-            this.forcesBR[1]+=this.weightBR
-            this.normalBR[1]=this.weightBR
-            this.forcesBR[2]-=dydz*this.weightBR
-            this.normalBR[2]= -dydz*this.weightBR
+            
+            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
+            this.forcesBR[0] += normal.x * this.weightBR;
+            this.forcesBR[1] += normal.y * this.weightBR;
+            this.forcesBR[2] += normal.z * this.weightBR;
+
+            this.applyNormalVelocityConstraint(normal);
         }
         if (this.touBL){
             this.touBL=false
             var dydx=((this.terrain.heightAt(this.pBL.x+this.accuracy,this.pBL.z)-this.terrain.heightAt(this.pBL.x-this.accuracy,this.pBL.z))/(2*this.accuracy))/this.pixelPerMeter
             var dydz=((this.terrain.heightAt(this.pBL.x,this.pBL.z+this.accuracy)-this.terrain.heightAt(this.pBL.x,this.pBL.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            this.forcesBL[0]-=dydx*this.weightBL
-            this.normalBL[0]= -dydx*this.weightBL
-            this.forcesBL[1]+=this.weightBL
-            this.normalBL[1]=this.weightBL
-            this.forcesBL[2]-=dydz*this.weightBL
-            this.normalBL[2]= -dydz*this.weightBL
+            
+            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
+            this.forcesBL[0] += normal.x * this.weightBL;
+            this.forcesBL[1] += normal.y * this.weightBL;
+            this.forcesBL[2] += normal.z * this.weightBL;
+
+            this.applyNormalVelocityConstraint(normal);
         }
     }
     sumForces(){
@@ -525,6 +545,7 @@ class Game{
             this.hiddenLastTime=0
         }
         this.time=((this.current_time-this.last_time)/1000)*timescale
+        this.time = Math.min(this.time, 0.033);
         this.last_time=this.current_time
         this.player.update();
         this.camera.update();
