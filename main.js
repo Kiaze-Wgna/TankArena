@@ -46,6 +46,7 @@ class InputHandler {
                 this.game.keySneak=true;
             }
             if ((e.key === "p")||(e.key === "P")){
+                this.game.last_time=performance.now();
                 physics=true;
             }
         });
@@ -292,6 +293,7 @@ class CObject{
         this.pFL = new THREE.Vector3();
         this.pBR = new THREE.Vector3();
         this.pBL = new THREE.Vector3();
+        this.corners=[this.pFR,this.pFL,this.pBR,this.pBL]
 
         this.updateCorners()
     }
@@ -412,6 +414,26 @@ class CObject{
         this.object.obj.position.y+=this.velocityY*this.object.game.time*this.pixelPerMeter
         this.object.obj.position.z+=this.velocityZ*this.object.game.time*this.pixelPerMeter
         
+        var maxPenetration = 0;
+
+        for (var c of this.corners) {
+            var terrainY = this.terrain.heightAt(c.x, c.z);
+
+            if (c.y < terrainY) {
+                var penetration = terrainY - c.y;
+                maxPenetration = Math.max(maxPenetration, penetration);
+            }
+        }
+
+        if (maxPenetration > 0) {
+            this.object.obj.position.y += maxPenetration;
+
+            if (this.velocityY < 0) this.velocityY = 0;
+
+            this.angVecX *= 0.5;
+            this.angVecZ *= 0.5;
+        }
+
         this.torqueX=(this.forcesBR[1]+this.forcesBL[1]-this.forcesFR[1]-this.forcesFL[1])*(this.object.objL/2)
         this.torqueY=(((this.forcesFR[0]+this.forcesFL[0]-this.forcesBR[0]-this.forcesBL[0])*(this.object.objL/2))-((this.forcesFR[2]+this.forcesBR[2]-this.forcesFL[2]-this.forcesBL[2])*(this.object.objW/2)))
         this.torqueZ=(this.forcesFR[1]+this.forcesBR[1]-this.forcesFL[1]-this.forcesBL[1])*(this.object.objW/2)
