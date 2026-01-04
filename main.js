@@ -4,7 +4,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=true;
+const locked=false;
 var physics=false
 const tankWidth=3.7
 const chassisBoxLength=690
@@ -17,6 +17,7 @@ const playerMass=60000
 const physicsSettings=[0.4,0.2,9.8]
 const timescale=1
 const outBoundRate=100
+const tractionForce=1000
 //classes
 class InputHandler {
     constructor(game){
@@ -197,26 +198,14 @@ class Player{
         });
     }
     update(){
-        if (this.game.keyFwd){
-            this.obj.position.z+=1;
-        }
-        if (this.game.keyBwd){
-            this.obj.position.z-=1;
-        }
-        if (this.game.keyRight){
-            this.obj.rotation.z+=0.3;
-        }
-        if (this.game.keyLeft){
-            this.obj.rotation.z-=0.3;
-        }
-        if (this.game.keyJump){
-            this.obj.rotation.x-=0.1;
-        }
-        if (this.game.keySneak){
-            this.obj.rotation.x+=0.1;
-        }
+        //if (this.game.keyJump){
+        //    this.obj.rotation.x-=0.1;
+        //}
+        //if (this.game.keySneak){
+        //    this.obj.rotation.x+=0.1;
+        //}
         if (physics){
-        this.CObject.update()
+            this.CObject.update()
         }
     }
 };
@@ -231,10 +220,7 @@ class CObject{
         this.terrain=terrain
         this.pixelPerMeter=this.object.game.pixelPerMeter
         
-        this.touFR=false
-        this.touFL=false
-        this.touBR=false
-        this.touBL=false
+        this.touch=[false,false,false,false]
         
         this.forces=[]
         this.acceleration=[]
@@ -255,45 +241,13 @@ class CObject{
         this.angVecY=0
         this.angVecZ=0
 
-        this.resetForces()
-    }
-    update(){
-        this.resetForces()
-        this.getNormals()
-        this.sumForces()
-    }
-    applyNormalVelocityConstraint(normal) {
-        let v = new THREE.Vector3(
-            this.velocityX,
-            this.velocityY,
-            this.velocityZ
-        );
-    
-        let vn = v.dot(normal);
-    
-        if (vn < 0) {
-            v.addScaledVector(normal, -vn);
-            this.velocityX = v.x;
-            this.velocityY = v.y;
-            this.velocityZ = v.z;
-        }
-    }    
-    resetForces(){
-        this.forcesFR=[0,0,0]
-        this.forcesFL=[0,0,0]
-        this.forcesBR=[0,0,0]
-        this.forcesBL=[0,0,0]
+        this.updateState()
+    }   
+    updateState(){
+        // FR, FL, BR, BL
+        this.forcesC=[[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
 
-        this.normalFR=[0,0,0]
-        this.normalFL=[0,0,0]
-        this.normalBR=[0,0,0]
-        this.normalBL=[0,0,0]
-
-        this.pFR = new THREE.Vector3();
-        this.pFL = new THREE.Vector3();
-        this.pBR = new THREE.Vector3();
-        this.pBL = new THREE.Vector3();
-        this.corners=[this.pFR,this.pFL,this.pBR,this.pBL]
+        this.corners= [new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3()];
 
         this.updateCorners()
     }
@@ -308,12 +262,49 @@ class CObject{
         var BR = new THREE.Vector3( hx, 0, -hz);
         var BL = new THREE.Vector3(-hx, 0, -hz);
 
-        this.pFR.copy(FR).applyEuler(euler).add(this.object.obj.position);
-        this.pFL.copy(FL).applyEuler(euler).add(this.object.obj.position);
-        this.pBR.copy(BR).applyEuler(euler).add(this.object.obj.position);
-        this.pBL.copy(BL).applyEuler(euler).add(this.object.obj.position);
+        this.corners[0].copy(FR).applyEuler(euler).add(this.object.obj.position);
+        this.corners[1].copy(FL).applyEuler(euler).add(this.object.obj.position);
+        this.corners[2].copy(BR).applyEuler(euler).add(this.object.obj.position);
+        this.corners[3].copy(BL).applyEuler(euler).add(this.object.obj.position);
+
+        // COM velocity
+        var vCOM = new THREE.Vector3(
+            this.velocityX,
+            this.velocityY,
+            this.velocityZ
+        );
+
+        // Angular velocity vector (WORLD SPACE)
+        var omega = new THREE.Vector3(
+            this.angVecX,
+            this.angVecY,
+            this.angVecZ
+        );
+
+        // Make sure array exists
+        this.cornerVelocities = this.cornerVelocities || [
+            new THREE.Vector3(),
+            new THREE.Vector3(),
+            new THREE.Vector3(),
+            new THREE.Vector3()
+        ];
+
+        // Compute velocity at each corner
+        for (let i = 0; i < 4; i++) {
+
+            // r = corner position - COM position
+            var r = new THREE.Vector3()
+                .copy(this.corners[i])
+                .sub(this.object.obj.position);
+
+            // v = vCOM + omega × r
+            this.cornerVelocities[i]
+                .copy(omega)
+                .cross(r)
+                .add(vCOM);
+        }
     }
-    getNormals(){
+    distributeWeight(){
         var hx = this.object.objL / 2;
         var hz = this.object.objW  / 2;
 
@@ -323,89 +314,126 @@ class CObject{
         var u = dx / this.object.objL + 0.5;
         var v = dz / this.object.objW  + 0.5;
     
-        var wFR = u * v;
-        var wFL = (1 - u) * v;
-        var wBL = (1 - u) * (1 - v);
-        var wBR = u * (1 - v);
+        var w = [u * v, (1 - u) * v, u * (1 - v), (1 - u) * (1 - v)]
         var wTot=0
 
-        if (this.pFR.y<=this.terrain.heightAt(this.pFR.x,this.pFR.z)){
-            wTot+=wFR
-            this.touFR=true
-        }
-        if (this.pFL.y<=this.terrain.heightAt(this.pFL.x,this.pFL.z)){
-            wTot+=wFL
-            this.touFL=true
-        }
-        if (this.pBR.y<=this.terrain.heightAt(this.pBR.x,this.pBR.z)){
-            wTot+=wBR
-            this.touBR=true
-        }
-        if (this.pBL.y<=this.terrain.heightAt(this.pBL.x,this.pBL.z)){
-            wTot+=wBL
-            this.touBL=true
+        for (let i = 0; i < 4; i++) {
+            if (this.corners[i].y<=this.terrain.heightAt(this.corners[i].x,this.corners[i].z)){
+                wTot+=w[i]
+                this.touch[i]=true
+            }
         }
 
-        this.weightFR= this.object.mass * this.g * (wFR/wTot)// + (this.terrain.heightAt(this.pFR.x,this.pFR.z)-this.pFR.y)*outBoundRate
-        this.weightFL= this.object.mass * this.g * (wFL/wTot)// + (this.terrain.heightAt(this.pFL.x,this.pFL.z)-this.pFL.y)*outBoundRate
-        this.weightBR= this.object.mass * this.g * (wBR/wTot)// + (this.terrain.heightAt(this.pBR.x,this.pBR.z)-this.pBR.y)*outBoundRate
-        this.weightBL= this.object.mass * this.g * (wBL/wTot)// + (this.terrain.heightAt(this.pBL.x,this.pBL.z)-this.pBL.y)*outBoundRate
-    
-    
-        if (this.touFR){
-            this.touFR=false
-            var dydx=((this.terrain.heightAt(this.pFR.x+this.accuracy,this.pFR.z)-this.terrain.heightAt(this.pFR.x-this.accuracy,this.pFR.z))/(2*this.accuracy))/this.pixelPerMeter
-            var dydz=((this.terrain.heightAt(this.pFR.x,this.pFR.z+this.accuracy)-this.terrain.heightAt(this.pFR.x,this.pFR.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            
-            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
-            this.forcesFR[0] += normal.x * this.weightFR;
-            this.forcesFR[1] += normal.y * this.weightFR;
-            this.forcesFR[2] += normal.z * this.weightFR;
-
-            this.applyNormalVelocityConstraint(normal);
+        this.massC= [this.object.mass * (w[0]/wTot),// + (this.terrain.heightAt(this.corners[0].x,this.corners[0].z)-this.corners[0].y)*outBoundRate
+                    this.object.mass * (w[1]/wTot),// + (this.terrain.heightAt(this.corners[1].x,this.corners[1].z)-this.corners[1].y)*outBoundRate
+                    this.object.mass * (w[2]/wTot),// + (this.terrain.heightAt(this.corners[2].x,this.corners[2].z)-this.corners[2].y)*outBoundRate
+                    this.object.mass * (w[3]/wTot)]// + (this.terrain.heightAt(this.corners[3].x,this.corners[3].z)-this.corners[3].y)*outBoundRate
+        
+        if (wTot==0){
+            this.massTotal=this.object.mass;
+        } else {
+            this.massTotal=0;
+            for (let i of this.massC){
+                this.massTotal+=i;
+            }
         }
-        if (this.touFL){
-            this.touFL=false
-            var dydx=((this.terrain.heightAt(this.pFL.x+this.accuracy,this.pFL.z)-this.terrain.heightAt(this.pFL.x-this.accuracy,this.pFL.z))/(2*this.accuracy))/this.pixelPerMeter
-            var dydz=((this.terrain.heightAt(this.pFL.x,this.pFL.z+this.accuracy)-this.terrain.heightAt(this.pFL.x,this.pFL.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            
-            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
-            this.forcesFL[0] += normal.x * this.weightFL;
-            this.forcesFL[1] += normal.y * this.weightFL;
-            this.forcesFL[2] += normal.z * this.weightFL;
-
-            this.applyNormalVelocityConstraint(normal);
+    }
+    getTraction(){
+        if (this.object.game.keyFwd){
+            this.getTractionLR(true,true)
         }
-        if (this.touBR){
-            this.touBR=false
-            var dydx=((this.terrain.heightAt(this.pBR.x+this.accuracy,this.pBR.z)-this.terrain.heightAt(this.pBR.x-this.accuracy,this.pBR.z))/(2*this.accuracy))/this.pixelPerMeter
-            var dydz=((this.terrain.heightAt(this.pBR.x,this.pBR.z+this.accuracy)-this.terrain.heightAt(this.pBR.x,this.pBR.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            
-            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
-            this.forcesBR[0] += normal.x * this.weightBR;
-            this.forcesBR[1] += normal.y * this.weightBR;
-            this.forcesBR[2] += normal.z * this.weightBR;
-
-            this.applyNormalVelocityConstraint(normal);
+        if (this.object.game.keyBwd){
+            this.getTractionLR(false,false)
         }
-        if (this.touBL){
-            this.touBL=false
-            var dydx=((this.terrain.heightAt(this.pBL.x+this.accuracy,this.pBL.z)-this.terrain.heightAt(this.pBL.x-this.accuracy,this.pBL.z))/(2*this.accuracy))/this.pixelPerMeter
-            var dydz=((this.terrain.heightAt(this.pBL.x,this.pBL.z+this.accuracy)-this.terrain.heightAt(this.pBL.x,this.pBL.z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-            
-            var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
-            this.forcesBL[0] += normal.x * this.weightBL;
-            this.forcesBL[1] += normal.y * this.weightBL;
-            this.forcesBL[2] += normal.z * this.weightBL;
-
-            this.applyNormalVelocityConstraint(normal);
+        if (this.object.game.keyRight){
+            this.getTractionLR(false,true)
         }
+        if (this.object.game.keyLeft){
+            this.getTractionLR(true,false)
+        }
+    }
+    getTractionLR(left,right){
+        var forward = new THREE.Vector3(0, 0, tractionForce);
+        forward.applyEuler(this.object.obj.rotation);
+        var leftNum=[1,3]
+        var rightNum=[0,2]
+        for (var i of leftNum){
+            if (left){
+                if (this.touch[i]){
+                    this.forcesC[i][0]+=forward.x
+                    this.forcesC[i][1]+=forward.y
+                    this.forcesC[i][2]+=forward.z
+                }
+            } else {
+                if (this.touch[i]){
+                    this.forcesC[i][0]-=forward.x
+                    this.forcesC[i][1]-=forward.y
+                    this.forcesC[i][2]-=forward.z
+                }
+            }
+        }
+        for (var i of rightNum){
+            if (right){
+                if (this.touch[i]){
+                    this.forcesC[i][0]+=forward.x
+                    this.forcesC[i][1]+=forward.y
+                    this.forcesC[i][2]+=forward.z
+                }
+            } else {
+                if (this.touch[i]){
+                    this.forcesC[i][0]-=forward.x
+                    this.forcesC[i][1]-=forward.y
+                    this.forcesC[i][2]-=forward.z
+                }
+            }
+        }
+    }
+    getNormals(){
+        if ((!this.touch[0])&&(!this.touch[1])&&(!this.touch[2])&&(!this.touch[3])){
+            console.log("stupid")
+        }
+        
+        for (let i = 0; i < 4; i++) {
+            if (this.touch[i]){
+                this.touch[i]=false
+                var dydx=((this.terrain.heightAt(this.corners[i].x+this.accuracy,this.corners[i].z)-this.terrain.heightAt(this.corners[i].x-this.accuracy,this.corners[i].z))/(2*this.accuracy))/this.pixelPerMeter
+                var dydz=((this.terrain.heightAt(this.corners[i].x,this.corners[i].z+this.accuracy)-this.terrain.heightAt(this.corners[i].x,this.corners[i].z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
+                
+                var denom = 1 + dydx*dydx + dydz*dydz;
+
+                var vn =
+                    dydx * this.cornerVelocities[i].x -
+                    this.cornerVelocities[i].y +
+                    dydz * this.cornerVelocities[i].z;
+
+                if (vn < 0.3) continue;
+
+                var N =
+                    ( this.massC[i] * vn ) /
+                    ( Math.max(this.object.game.time, 0.016) * (1 + dydx*dydx + dydz*dydz) );
+                    var maxN = this.object.mass * 50; // tune: 20–100 works
+                N = Math.min(N, maxN);                    
+
+                this.forcesC[i][0] = -dydx * N;
+                this.forcesC[i][1] =  N;
+                this.forcesC[i][2] = -dydz * N;
+
+                //var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
+                //this.forcesC[i][0] += -dydx * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+                //this.forcesC[i][1] += this.massC[i] * this.g// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+                //this.forcesC[i][2] += -dydz * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+            }
+        }
+
+        //this.applyNormalVelocityConstraint(normal);
     }
     sumForces(){
         this.forces=[
-            this.forcesFR[0]+this.forcesFL[0]+this.forcesBR[0]+this.forcesBL[0],
-            this.forcesFR[1]+this.forcesFL[1]+this.forcesBR[1]+this.forcesBL[1]-(this.object.mass * this.g),
-            this.forcesFR[2]+this.forcesFL[2]+this.forcesBR[2]+this.forcesBL[2]]
+            this.forcesC[0][0]+this.forcesC[1][0]+this.forcesC[2][0]+this.forcesC[3][0],
+            this.forcesC[0][1]+this.forcesC[1][1]+this.forcesC[2][1]+this.forcesC[3][1]-this.massTotal*this.g,
+            this.forcesC[0][2]+this.forcesC[1][2]+this.forcesC[2][2]+this.forcesC[3][2]]
+        console.log(this.forces)
+        console.log(this.massTotal)
         this.acceleration=[this.forces[0]/this.object.mass,this.forces[1]/this.object.mass,this.forces[2]/this.object.mass]
         this.velocityX+= this.acceleration[0]*this.object.game.time
         this.velocityY+= this.acceleration[1]*this.object.game.time
@@ -414,6 +442,7 @@ class CObject{
         this.object.obj.position.y+=this.velocityY*this.object.game.time*this.pixelPerMeter
         this.object.obj.position.z+=this.velocityZ*this.object.game.time*this.pixelPerMeter
         
+        /*
         var maxPenetration = 0;
 
         for (var c of this.corners) {
@@ -433,10 +462,11 @@ class CObject{
             this.angVecX *= 0.5;
             this.angVecZ *= 0.5;
         }
+        */
 
-        this.torqueX=(this.forcesBR[1]+this.forcesBL[1]-this.forcesFR[1]-this.forcesFL[1])*(this.object.objL/2)
-        this.torqueY=(((this.forcesFR[0]+this.forcesFL[0]-this.forcesBR[0]-this.forcesBL[0])*(this.object.objL/2))-((this.forcesFR[2]+this.forcesBR[2]-this.forcesFL[2]-this.forcesBL[2])*(this.object.objW/2)))
-        this.torqueZ=(this.forcesFR[1]+this.forcesBR[1]-this.forcesFL[1]-this.forcesBL[1])*(this.object.objW/2)
+        this.torqueX=(this.forcesC[2][1]+this.forcesC[3][1]-this.forcesC[0][1]-this.forcesC[1][1])*(this.object.objL/2)
+        this.torqueY=(((this.forcesC[0][0]+this.forcesC[1][0]-this.forcesC[2][0]-this.forcesC[3][0])*(this.object.objL/2))-((this.forcesC[0][2]+this.forcesC[2][2]-this.forcesC[1][2]-this.forcesC[3][2])*(this.object.objW/2)))
+        this.torqueZ=(this.forcesC[0][1]+this.forcesC[2][1]-this.forcesC[1][1]-this.forcesC[3][1])*(this.object.objW/2)
         this.angAccX=this.torqueX/this.inertiaX
         this.angAccY=this.torqueY/this.inertiaY
         this.angAccZ=this.torqueZ/this.inertiaZ
@@ -446,6 +476,29 @@ class CObject{
         this.object.obj.rotation.x+=this.angVecX*this.object.game.time
         this.object.obj.rotation.y+=this.angVecY*this.object.game.time
         this.object.obj.rotation.z+=this.angVecZ*this.object.game.time
+    }
+    update(){
+        this.updateState()
+        this.distributeWeight()
+        this.getTraction()
+        this.getNormals()
+        this.sumForces()
+    }
+    applyNormalVelocityConstraint(normal) {
+        let v = new THREE.Vector3(
+            this.velocityX,
+            this.velocityY,
+            this.velocityZ
+        );
+    
+        let vn = v.dot(normal);
+    
+        if (vn < 0) {
+            v.addScaledVector(normal, -vn);
+            this.velocityX = v.x;
+            this.velocityY = v.y;
+            this.velocityZ = v.z;
+        }
     }
 }
 
