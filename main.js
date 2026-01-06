@@ -17,7 +17,7 @@ const playerMass=60000
 const physicsSettings=[0.4,0.2,9.8]
 const timescale=1
 const outBoundRate=100
-const tractionForce=1000
+const tractionForce=1000000
 //classes
 class InputHandler {
     constructor(game){
@@ -406,22 +406,27 @@ class CObject{
                     this.cornerVelocities[i].y +
                     dydz * this.cornerVelocities[i].z;
 
-                if (vn < 0.3) continue;
+                if (vn < 0.3){
+                    this.velocityX=0
+                    this.velocityY=0
+                    this.velocityZ=0
+                    this.angVecX=0
+                    this.angVecY=0
+                    this.angVecZ=0
+                    this.forcesC[i][0] += -dydx * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+                    this.forcesC[i][1] += this.massC[i] * this.g// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+                    this.forcesC[i][2] += -dydz * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+                } else {
+                    var N =
+                        ( this.massC[i] * vn ) /
+                        ( Math.max(this.object.game.time, 0.016) * (1 + dydx*dydx + dydz*dydz) );
+                        var maxN = this.object.mass * 50; // tune: 20–100 works
+                    N = Math.min(N, maxN);                    
 
-                var N =
-                    ( this.massC[i] * vn ) /
-                    ( Math.max(this.object.game.time, 0.016) * (1 + dydx*dydx + dydz*dydz) );
-                    var maxN = this.object.mass * 50; // tune: 20–100 works
-                N = Math.min(N, maxN);                    
-
-                this.forcesC[i][0] = -dydx * N;
-                this.forcesC[i][1] =  N;
-                this.forcesC[i][2] = -dydz * N;
-
-                //var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
-                //this.forcesC[i][0] += -dydx * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
-                //this.forcesC[i][1] += this.massC[i] * this.g// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
-                //this.forcesC[i][2] += -dydz * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
+                    this.forcesC[i][0] = -dydx * N;
+                    this.forcesC[i][1] =  N;
+                    this.forcesC[i][2] = -dydz * N;
+                }
             }
         }
 
