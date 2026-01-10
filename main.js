@@ -4,7 +4,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=false;
+const locked=true;
 var physics=false
 const tankWidth=3.7
 const chassisBoxLength=690
@@ -14,10 +14,10 @@ const pixelPerMeter=chassisBoxWidth/tankWidth
 const tankLength=chassisBoxLength/pixelPerMeter
 const tankHeight=chassisBoxHeight/pixelPerMeter
 const playerMass=60000
-const physicsSettings=[0.4,0.2,9.8]
+const physicsSettings=[0.2,0.1,9.8]
 const timescale=1
 const outBoundRate=100
-const tractionForce=1000000
+const tractionForceRatio=2
 //classes
 class InputHandler {
     constructor(game){
@@ -204,9 +204,7 @@ class Player{
         //if (this.game.keySneak){
         //    this.obj.rotation.x+=0.1;
         //}
-        if (physics){
-            this.CObject.update()
-        }
+        this.CObject.update()
     }
 };
 
@@ -219,291 +217,133 @@ class CObject{
         this.object=object
         this.terrain=terrain
         this.pixelPerMeter=this.object.game.pixelPerMeter
-        
-        this.touch=[false,false,false,false]
-        
-        this.forces=[]
-        this.acceleration=[]
-        this.velocityX=0
-        this.velocityY=0
-        this.velocityZ=0
 
-        this.torqueX=0
+        this.forces=[0,0,0]
+        this.acceleration=[0,0,0]
+        this.velocity=new THREE.Vector3(0,0,0)
+
         this.torqueY=0
-        this.torqueZ=0
-        this.angAccX=0
         this.angAccY=0
-        this.angAccZ=0
-        this.inertiaX = this.object.mass * ( (this.object.objL*this.object.objL)/12 + (this.object.objH*this.object.objH)/3 );
         this.inertiaY = this.object.mass * ( (this.object.objW*this.object.objW + this.object.objL*this.object.objL) / 12 );
-        this.inertiaZ = this.object.mass * ( (this.object.objW*this.object.objW)/12 + (this.object.objH*this.object.objH)/3 );
-        this.angVecX=0
-        this.angVecY=0
-        this.angVecZ=0
+        this.angVelY=0
+        this.rotation=0
+
+        this.object.obj.position.x=0
+        this.object.obj.position.y=0
+        this.object.obj.position.z=0
+        this.yawQuat = new THREE.Quaternion();
+        this.tiltQuat = new THREE.Quaternion();
 
         this.updateState()
-    }   
-    updateState(){
-        // FR, FL, BR, BL
-        this.forcesC=[[0,0,0],[0,0,0],[0,0,0],[0,0,0]]
-
-        this.corners= [new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3()];
-
-        this.updateCorners()
-    }
-    updateCorners() {
-        var hx = this.object.chassisW / 2;
-        var hz = this.object.chassisL  / 2;
-
-        var euler = new THREE.Euler(this.object.obj.rotation.x, this.object.obj.rotation.y, this.object.obj.rotation.z, 'XYZ');
-
-        var FR = new THREE.Vector3( hx, 0,  hz);
-        var FL = new THREE.Vector3(-hx, 0,  hz);
-        var BR = new THREE.Vector3( hx, 0, -hz);
-        var BL = new THREE.Vector3(-hx, 0, -hz);
-
-        this.corners[0].copy(FR).applyEuler(euler).add(this.object.obj.position);
-        this.corners[1].copy(FL).applyEuler(euler).add(this.object.obj.position);
-        this.corners[2].copy(BR).applyEuler(euler).add(this.object.obj.position);
-        this.corners[3].copy(BL).applyEuler(euler).add(this.object.obj.position);
-
-        // COM velocity
-        var vCOM = new THREE.Vector3(
-            this.velocityX,
-            this.velocityY,
-            this.velocityZ
-        );
-
-        // Angular velocity vector (WORLD SPACE)
-        var omega = new THREE.Vector3(
-            this.angVecX,
-            this.angVecY,
-            this.angVecZ
-        );
-
-        // Make sure array exists
-        this.cornerVelocities = this.cornerVelocities || [
-            new THREE.Vector3(),
-            new THREE.Vector3(),
-            new THREE.Vector3(),
-            new THREE.Vector3()
-        ];
-
-        // Compute velocity at each corner
-        for (let i = 0; i < 4; i++) {
-
-            // r = corner position - COM position
-            var r = new THREE.Vector3()
-                .copy(this.corners[i])
-                .sub(this.object.obj.position);
-
-            // v = vCOM + omega × r
-            this.cornerVelocities[i]
-                .copy(omega)
-                .cross(r)
-                .add(vCOM);
-        }
-    }
-    distributeWeight(){
-        var hx = this.object.objL / 2;
-        var hz = this.object.objW  / 2;
-
-        var dx = Math.sin(this.object.obj.rotation.z) * hx;
-        var dz = Math.sin(this.object.obj.rotation.x) * hz;
-    
-        var u = dx / this.object.objL + 0.5;
-        var v = dz / this.object.objW  + 0.5;
-    
-        var w = [u * v, (1 - u) * v, u * (1 - v), (1 - u) * (1 - v)]
-        var wTot=0
-
-        for (let i = 0; i < 4; i++) {
-            if (this.corners[i].y<=this.terrain.heightAt(this.corners[i].x,this.corners[i].z)){
-                wTot+=w[i]
-                this.touch[i]=true
-            }
-        }
-
-        this.massC= [this.object.mass * (w[0]/wTot),// + (this.terrain.heightAt(this.corners[0].x,this.corners[0].z)-this.corners[0].y)*outBoundRate
-                    this.object.mass * (w[1]/wTot),// + (this.terrain.heightAt(this.corners[1].x,this.corners[1].z)-this.corners[1].y)*outBoundRate
-                    this.object.mass * (w[2]/wTot),// + (this.terrain.heightAt(this.corners[2].x,this.corners[2].z)-this.corners[2].y)*outBoundRate
-                    this.object.mass * (w[3]/wTot)]// + (this.terrain.heightAt(this.corners[3].x,this.corners[3].z)-this.corners[3].y)*outBoundRate
-        
-        if (wTot==0){
-            this.massTotal=this.object.mass;
-        } else {
-            this.massTotal=0;
-            for (let i of this.massC){
-                this.massTotal+=i;
-            }
-        }
-    }
-    getTraction(){
-        if (this.object.game.keyFwd){
-            this.getTractionLR(true,true)
-        }
-        if (this.object.game.keyBwd){
-            this.getTractionLR(false,false)
-        }
-        if (this.object.game.keyRight){
-            this.getTractionLR(false,true)
-        }
-        if (this.object.game.keyLeft){
-            this.getTractionLR(true,false)
-        }
-    }
-    getTractionLR(left,right){
-        var forward = new THREE.Vector3(0, 0, tractionForce);
-        forward.applyEuler(this.object.obj.rotation);
-        var leftNum=[1,3]
-        var rightNum=[0,2]
-        for (var i of leftNum){
-            if (left){
-                if (this.touch[i]){
-                    this.forcesC[i][0]+=forward.x
-                    this.forcesC[i][1]+=forward.y
-                    this.forcesC[i][2]+=forward.z
-                }
-            } else {
-                if (this.touch[i]){
-                    this.forcesC[i][0]-=forward.x
-                    this.forcesC[i][1]-=forward.y
-                    this.forcesC[i][2]-=forward.z
-                }
-            }
-        }
-        for (var i of rightNum){
-            if (right){
-                if (this.touch[i]){
-                    this.forcesC[i][0]+=forward.x
-                    this.forcesC[i][1]+=forward.y
-                    this.forcesC[i][2]+=forward.z
-                }
-            } else {
-                if (this.touch[i]){
-                    this.forcesC[i][0]-=forward.x
-                    this.forcesC[i][1]-=forward.y
-                    this.forcesC[i][2]-=forward.z
-                }
-            }
-        }
-    }
-    getNormals(){
-        if ((!this.touch[0])&&(!this.touch[1])&&(!this.touch[2])&&(!this.touch[3])){
-            console.log("stupid")
-        }
-        
-        for (let i = 0; i < 4; i++) {
-            if (this.touch[i]){
-                this.touch[i]=false
-                var dydx=((this.terrain.heightAt(this.corners[i].x+this.accuracy,this.corners[i].z)-this.terrain.heightAt(this.corners[i].x-this.accuracy,this.corners[i].z))/(2*this.accuracy))/this.pixelPerMeter
-                var dydz=((this.terrain.heightAt(this.corners[i].x,this.corners[i].z+this.accuracy)-this.terrain.heightAt(this.corners[i].x,this.corners[i].z-this.accuracy))/(2*this.accuracy))/this.pixelPerMeter
-                
-                var denom = 1 + dydx*dydx + dydz*dydz;
-
-                var vn =
-                    dydx * this.cornerVelocities[i].x -
-                    this.cornerVelocities[i].y +
-                    dydz * this.cornerVelocities[i].z;
-
-                if (vn < 0.3){
-                    this.velocityX=0
-                    this.velocityY=0
-                    this.velocityZ=0
-                    this.angVecX=0
-                    this.angVecY=0
-                    this.angVecZ=0
-                    this.forcesC[i][0] += -dydx * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
-                    this.forcesC[i][1] += this.massC[i] * this.g// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
-                    this.forcesC[i][2] += -dydz * (this.massC[i] * this.g)// + (this.forcesC[i][0]/normal.x) + (this.forcesC[i][2]/normal.z));
-                } else {
-                    var N =
-                        ( this.massC[i] * vn ) /
-                        ( Math.max(this.object.game.time, 0.016) * (1 + dydx*dydx + dydz*dydz) );
-                        var maxN = this.object.mass * 50; // tune: 20–100 works
-                    N = Math.min(N, maxN);                    
-
-                    this.forcesC[i][0] = -dydx * N;
-                    this.forcesC[i][1] =  N;
-                    this.forcesC[i][2] = -dydz * N;
-                }
-            }
-        }
-        //var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
-        //this.applyNormalVelocityConstraint(normal);
-    }
-    sumForces(){
-        this.forces=[
-            this.forcesC[0][0]+this.forcesC[1][0]+this.forcesC[2][0]+this.forcesC[3][0],
-            this.forcesC[0][1]+this.forcesC[1][1]+this.forcesC[2][1]+this.forcesC[3][1]-this.massTotal*this.g,
-            this.forcesC[0][2]+this.forcesC[1][2]+this.forcesC[2][2]+this.forcesC[3][2]]
-        console.log(this.forces)
-        console.log(this.massTotal)
-        this.acceleration=[this.forces[0]/this.object.mass,this.forces[1]/this.object.mass,this.forces[2]/this.object.mass]
-        this.velocityX+= this.acceleration[0]*this.object.game.time
-        this.velocityY+= this.acceleration[1]*this.object.game.time
-        this.velocityZ+= this.acceleration[2]*this.object.game.time
-        this.object.obj.position.x+=this.velocityX*this.object.game.time*this.pixelPerMeter
-        this.object.obj.position.y+=this.velocityY*this.object.game.time*this.pixelPerMeter
-        this.object.obj.position.z+=this.velocityZ*this.object.game.time*this.pixelPerMeter
-        
-        /*
-        var maxPenetration = 0;
-
-        for (var c of this.corners) {
-            var terrainY = this.terrain.heightAt(c.x, c.z);
-
-            if (c.y < terrainY) {
-                var penetration = terrainY - c.y;
-                maxPenetration = Math.max(maxPenetration, penetration);
-            }
-        }
-
-        if (maxPenetration > 0) {
-            this.object.obj.position.y += maxPenetration;
-
-            if (this.velocityY < 0) this.velocityY = 0;
-
-            this.angVecX *= 0.5;
-            this.angVecZ *= 0.5;
-        }
-        */
-
-        this.torqueX=(this.forcesC[2][1]+this.forcesC[3][1]-this.forcesC[0][1]-this.forcesC[1][1])*(this.object.objL/2)
-        this.torqueY=(((this.forcesC[0][0]+this.forcesC[1][0]-this.forcesC[2][0]-this.forcesC[3][0])*(this.object.objL/2))-((this.forcesC[0][2]+this.forcesC[2][2]-this.forcesC[1][2]-this.forcesC[3][2])*(this.object.objW/2)))
-        this.torqueZ=(this.forcesC[0][1]+this.forcesC[2][1]-this.forcesC[1][1]-this.forcesC[3][1])*(this.object.objW/2)
-        this.angAccX=this.torqueX/this.inertiaX
-        this.angAccY=this.torqueY/this.inertiaY
-        this.angAccZ=this.torqueZ/this.inertiaZ
-        this.angVecX+=this.angAccX*this.object.game.time
-        this.angVecY+=this.angAccY*this.object.game.time
-        this.angVecZ+=this.angAccZ*this.object.game.time
-        this.object.obj.rotation.x+=this.angVecX*this.object.game.time
-        this.object.obj.rotation.y+=this.angVecY*this.object.game.time
-        this.object.obj.rotation.z+=this.angVecZ*this.object.game.time
-    }
+    } 
     update(){
         this.updateState()
-        this.distributeWeight()
-        this.getTraction()
-        this.getNormals()
-        this.sumForces()
+        this.updatePosition()
+        this.updateProjection()
     }
-    applyNormalVelocityConstraint(normal) {
-        let v = new THREE.Vector3(
-            this.velocityX,
-            this.velocityY,
-            this.velocityZ
-        );
-    
-        let vn = v.dot(normal);
-    
-        if (vn < 0) {
-            v.addScaledVector(normal, -vn);
-            this.velocityX = v.x;
-            this.velocityY = v.y;
-            this.velocityZ = v.z;
+    updateState(){
+        this.torqueY =0
+        this.forces=[0,0,0]
+        if ((this.velocity.x==0)&&(this.velocity.z==0)&&(this.angVelY==0)){
+            this.cFriction=this.cosf;
+        } else {
+            this.cFriction=this.codf;
         }
+    }
+    updatePosition(){
+        var forward = new THREE.Vector3(0, 0, tractionForceRatio*this.object.mass);
+        forward.applyEuler(new THREE.Euler(0,this.rotation,0));
+        if (this.object.game.keyFwd){
+            this.forces=[forward.x,0,forward.z]
+        }
+        if (this.object.game.keyBwd){
+            this.forces=[-forward.x,0,-forward.z]
+        }
+        this.acceleration=[this.forces[0]/this.object.mass,0,this.forces[2]/this.object.mass]
+        this.velocity.x += this.acceleration[0]*this.object.game.time
+        this.velocity.z += this.acceleration[2]*this.object.game.time
+        //friction
+        if (this.velocity.length()>this.cFriction*this.g*this.object.game.time){
+            this.velocity.addScaledVector(this.velocity, -this.cFriction*this.g*this.object.game.time);
+        } else {
+            this.velocity.set(0,0,0)
+        }
+
+        this.object.obj.position.x+=this.velocity.x*this.object.game.time*this.pixelPerMeter
+        this.object.obj.position.z+=this.velocity.z*this.object.game.time*this.pixelPerMeter
+        
+        if (this.object.game.keyRight){
+            this.torqueY = -3.7*tractionForceRatio*this.object.mass/tankWidth;
+        }
+        if (this.object.game.keyLeft){
+            this.torqueY = 3.7*tractionForceRatio*this.object.mass/tankWidth;
+        }
+
+        this.angAccY=this.torqueY/this.inertiaY
+        this.angVelY+=this.angAccY*this.object.game.time
+        //Friction
+        if (Math.abs(this.angVelY)>this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time){
+            this.angVelY-=Math.sign(this.angVelY)*this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time
+        } else {
+            this.angVelY=0
+        }
+        console.log(this.angVelY)
+        this.rotation+=this.angVelY*this.object.game.time
+        this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.object.game.time));
+    }
+    updateProjection(){
+        this.finalQuat = this.yawQuat.clone().multiply(this.tiltQuat);
+        var hw = this.object.chassisW / 2;
+        var hl = this.object.chassisL  / 2;
+
+        this.corners = [
+            new THREE.Vector3( hw, 0,  hl),
+            new THREE.Vector3(-hw, 0,  hl),
+            new THREE.Vector3( hw, 0, -hl),
+            new THREE.Vector3(-hw, 0, -hl),
+        ];
+
+        for (let c of this.corners){
+            c.applyQuaternion(this.finalQuat);
+            c.add(this.object.obj.position);
+            c.y = this.terrain.heightAt(c.x, c.z);
+        }
+
+        const right = new THREE.Vector3()
+            .subVectors(this.corners[0], this.corners[1]) // FR - FL
+            .normalize();
+
+            const forward = new THREE.Vector3()
+            .subVectors(this.corners[0], this.corners[2]) // FLIP
+            .normalize();
+
+        const up = new THREE.Vector3()
+            .crossVectors(forward, right)
+            .normalize();
+        if (up.y < 0) {
+            right.negate();
+            up.crossVectors(forward, right).normalize();
+        }
+        const rotationMatrix = new THREE.Matrix4().makeBasis(
+            right,
+            up,
+            forward
+        );
+        
+        
+        this.tiltQuat.setFromRotationMatrix(rotationMatrix);
+        const euler = new THREE.Euler().setFromQuaternion(this.tiltQuat, 'YXZ');
+
+// Zero out the Y (yaw) component
+euler.y = 0;
+
+// Reconstruct the tiltQuat without yaw
+this.tiltQuat.setFromEuler(euler);
+        this.object.obj.quaternion.copy(this.finalQuat);
+        console.log(this.tiltQuat)
+        // --- height ---
+        this.object.obj.position.y =
+            (this.corners[0].y + this.corners[1].y + this.corners[2].y + this.corners[3].y) * 0.25;
     }
 }
 
@@ -582,6 +422,7 @@ class Game{
         this.last_time=performance.now();
         this.current_time=performance.now();
         this.time=0;
+        this.hiddenLastTime=0
         // Game Keys
         this.input=new InputHandler(this);
         this.keyFwd=false;
@@ -625,8 +466,8 @@ class Game{
             this.hiddenLastTime=0
         }
         this.time=((this.current_time-this.last_time)/1000)*timescale
-        this.time = Math.min(this.time, 0.033);
         this.last_time=this.current_time
+        
         this.player.update();
         this.camera.update();
     }
@@ -640,7 +481,6 @@ var gamelis=[new Game(pixelPerMeter)]
 function animation() {
     gamelis[0].update();
     gamelis[0].render();
-    //console.log([gamelis[0].keyFwd,gamelis[0].keyBwd,gamelis[0].keyRight,gamelis[0].keyLeft,gamelis[0].keyJump,gamelis[0].keySneak]);
     requestAnimationFrame(animation);
 }
 animation();
