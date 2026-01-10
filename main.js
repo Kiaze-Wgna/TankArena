@@ -113,7 +113,7 @@ class Terrain{
     heightAt(x, z) {
         let y = 0;
     
-        let amplitude = 5*pixelPerMeter;
+        let amplitude = 3*pixelPerMeter;
         let frequency = 1/(50*pixelPerMeter);
     
         for (let i = 0; i < 5; i++) {
