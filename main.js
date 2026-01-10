@@ -429,7 +429,7 @@ class CObject{
                 }
             }
         }
-
+        //var normal = new THREE.Vector3(-dydx, 1, -dydz).normalize();
         //this.applyNormalVelocityConstraint(normal);
     }
     sumForces(){
