@@ -5,7 +5,6 @@ import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
 const locked=true;
-var physics=false
 const tankWidth=3.7
 const chassisBoxLength=690
 const chassisBoxWidth=463
@@ -16,7 +15,6 @@ const tankHeight=chassisBoxHeight/pixelPerMeter
 const playerMass=60000
 const physicsSettings=[0.2,0.1,9.8]
 const timescale=1
-const outBoundRate=100
 const tractionForceRatio=2
 //classes
 class InputHandler {
@@ -40,15 +38,23 @@ class InputHandler {
             if (((e.key === "ArrowLeft")||(e.key === "a")||(e.key === "A"))&&(this.game.keyLeft==false)){
                 this.game.keyLeft=true;
             }
-            if ((e.key === " ")&&(this.game.keyJump==false)){
-                this.game.keyJump=true;
+            if ((e.key === " ")&&(this.game.keyShoot==false)){
+                this.game.keyShoot=true;
             }
-            if ((e.key === "Shift")&&(this.game.keySneak==false)){
-                this.game.keySneak=true;
+            if (e.key === "Shift"){
+                if (this.game.keySKCam){
+                    this.game.keySKCam=false;
+                } else {
+                    this.game.keySKCam=true;
+                }
             }
-            if ((e.key === "p")||(e.key === "P")){
-                this.game.last_time=performance.now();
-                physics=true;
+        });
+        window.addEventListener("mousedown", e => {
+            if (e.button === 0) {
+                this.game.keyShoot=true;
+            }
+            if (e.button === 2) {
+                this.game.keySCam=true;
             }
         });
         window.addEventListener("keyup", e => {
@@ -65,10 +71,15 @@ class InputHandler {
                 this.game.keyLeft=false;
             }
             if (e.key === " "){
-                this.game.keyJump=false;
+                this.game.keyShoot=false;
             }
-            if (e.key === "Shift"){
-                this.game.keySneak=false;
+        });
+        window.addEventListener("mouseup", e => {
+            if (e.button === 0) {
+                this.game.keyShoot=false;
+            }
+            if (e.button === 2) {
+                this.game.keySCam=false;
             }
         });
     }
@@ -164,20 +175,22 @@ class Player{
         this.turretPivot.add(this.turret);
         // Gun Pivot
         this.gunPivot= new THREE.Object3D();
+        this.gunPivot.position.set(0,58,235);
         this.turretPivot.add(this.gunPivot)
+        // Shooting Camera Arm
+        this.cameraShootArm= new THREE.Object3D();
+        this.cameraShootArm.position.set(0,58,10);
+        this.cameraShootArm.rotation.y=Math.PI;
+        this.gunPivot.add(this.cameraShootArm);
         // Gun
         this.gun= new THREE.Object3D();
-        this.gun.position.set(0,58,235);
         this.gunPivot.add(this.gun);
         // Camera Pivot
         this.cameraPivot= new THREE.Object3D();
         this.turretPivot.add(this.cameraPivot)
         // Camera Arm
         this.cameraArm = new THREE.Object3D();
-        this.cameraXi=0;
-        this.cameraYi=500;
-        this.cameraZi=-1500;
-        this.cameraArm.position.set(this.cameraXi, this.cameraYi, this.cameraZi); 
+        this.cameraArm.position.set(0, 500, -1500); 
         this.cameraArm.rotation.y=Math.PI;
         this.cameraPivot.add(this.cameraArm);
         this.CObject=new CObject(this,this.game.terrain,physicsSettings)
@@ -198,12 +211,13 @@ class Player{
         });
     }
     update(){
-        //if (this.game.keyJump){
-        //    this.obj.rotation.x-=0.1;
-        //}
-        //if (this.game.keySneak){
-        //    this.obj.rotation.x+=0.1;
-        //}
+        if (locked){
+            if ((this.game.keySCam) || (this.game.keySKCam)) {
+                this.cameraShootArm.add(this.game.camera.camera)
+            } else {
+                this.cameraArm.add(this.game.camera.camera)
+            }
+        }
         this.CObject.update()
     }
 };
@@ -287,7 +301,6 @@ class CObject{
         } else {
             this.angVelY=0
         }
-        console.log(this.angVelY)
         this.rotation+=this.angVelY*this.object.game.time
         this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.object.game.time));
     }
@@ -310,7 +323,7 @@ class CObject{
         }
 
         const right = new THREE.Vector3()
-            .subVectors(this.corners[0], this.corners[1]) // FR - FL
+            .subVectors(this.corners[2], this.corners[3]) // BR - BL
             .normalize();
 
             const forward = new THREE.Vector3()
@@ -330,18 +343,12 @@ class CObject{
             forward
         );
         
-        
         this.tiltQuat.setFromRotationMatrix(rotationMatrix);
         const euler = new THREE.Euler().setFromQuaternion(this.tiltQuat, 'YXZ');
 
-// Zero out the Y (yaw) component
-euler.y = 0;
-
-// Reconstruct the tiltQuat without yaw
-this.tiltQuat.setFromEuler(euler);
+        euler.y = 0;
+        this.tiltQuat.setFromEuler(euler);
         this.object.obj.quaternion.copy(this.finalQuat);
-        console.log(this.tiltQuat)
-        // --- height ---
         this.object.obj.position.y =
             (this.corners[0].y + this.corners[1].y + this.corners[2].y + this.corners[3].y) * 0.25;
     }
@@ -361,29 +368,36 @@ class Camera{
             window.addEventListener("mousemove", e => {
                 this.yaw   -= e.movementX * 0.002;
                 this.pitch -= e.movementY * 0.002;
-                this.pitch = Math.max(-0.1, Math.min(0.05, this.pitch));
+                if ((this.game.keySCam)||(this.game.keySKCam)) {
+                    this.pitch = Math.max(-0.13, Math.min(0.45, this.pitch));
+                } else {
+                    this.pitch = Math.max(-0.1, Math.min(0.05, this.pitch));
+                }
+                
             });
             this.minZoomScale = 0.7;
             this.maxZoomScale = 1.5;
             this.zoomSpeed = 0.001;
             window.addEventListener("wheel", e => {
-                this.game.player.cameraArm.position.x += e.deltaY * this.zoomSpeed * this.game.player.cameraXi;
-                this.game.player.cameraArm.position.x = Math.max(
-                    this.minZoomScale * this.game.player.cameraXi,
-                    Math.min(this.maxZoomScale * this.game.player.cameraXi, this.game.player.cameraArm.position.x)
-                );
+                if (!((this.game.keySCam)||(this.game.keySKCam))){
+                    this.game.player.cameraArm.position.x += e.deltaY * this.zoomSpeed * this.game.player.cameraXi;
+                    this.game.player.cameraArm.position.x = Math.max(
+                        this.minZoomScale * this.game.player.cameraXi,
+                        Math.min(this.maxZoomScale * this.game.player.cameraXi, this.game.player.cameraArm.position.x)
+                    );
 
-                this.game.player.cameraArm.position.y += e.deltaY * this.zoomSpeed * this.game.player.cameraYi;
-                this.game.player.cameraArm.position.y = Math.max(
-                    this.minZoomScale * this.game.player.cameraYi,
-                    Math.min(this.maxZoomScale * this.game.player.cameraYi, this.game.player.cameraArm.position.y)
-                );
+                    this.game.player.cameraArm.position.y += e.deltaY * this.zoomSpeed * this.game.player.cameraYi;
+                    this.game.player.cameraArm.position.y = Math.max(
+                        this.minZoomScale * this.game.player.cameraYi,
+                        Math.min(this.maxZoomScale * this.game.player.cameraYi, this.game.player.cameraArm.position.y)
+                    );
 
-                this.game.player.cameraArm.position.z += e.deltaY * this.zoomSpeed * this.game.player.cameraZi;
-                this.game.player.cameraArm.position.z = Math.min(
-                    this.minZoomScale * this.game.player.cameraZi,
-                    Math.max(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
-                );
+                    this.game.player.cameraArm.position.z += e.deltaY * this.zoomSpeed * this.game.player.cameraZi;
+                    this.game.player.cameraArm.position.z = Math.min(
+                        this.minZoomScale * this.game.player.cameraZi,
+                        Math.max(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
+                    );
+                }
             }, { passive: false });
         } else{
             this.camera.position.set(0,900,-800);
@@ -429,8 +443,9 @@ class Game{
         this.keyBwd=false;
         this.keyRight=false;
         this.keyLeft=false;
-        this.keyJump=false;
-        this.keySneak=false;
+        this.keyShoot=false;
+        this.keySCam=false;
+        this.keySKCam=false;
         this.loader= new GLTFLoader();
         //Terrain
         this.terrain=new Terrain(this)
