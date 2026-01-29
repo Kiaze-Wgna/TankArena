@@ -4,7 +4,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=false;
+const locked=true;
 const tankWidth=3.7
 const chassisBoxLength=690
 const chassisBoxWidth=463
