@@ -150,9 +150,9 @@ class Projectile{
         this.speedZ=forward.z;
     }
     update() {
-        this.bullet.position.x+=this.speedX * this.player.game.time; 
-        this.bullet.position.y+=this.speedY * this.player.game.time; 
-        this.bullet.position.z+=this.speedZ * this.player.game.time; 
+        this.bullet.position.x+=this.speedX * this.player.game.time * this.player.game.pixelPerMeter; 
+        this.bullet.position.y+=this.speedY * this.player.game.time * this.player.game.pixelPerMeter; 
+        this.bullet.position.z+=this.speedZ * this.player.game.time * this.player.game.pixelPerMeter; 
     }
 }
 
