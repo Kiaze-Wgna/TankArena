@@ -4,7 +4,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=true;
+const locked=false;
 const tankWidth=3.7
 const chassisBoxLength=690
 const chassisBoxWidth=463
@@ -16,6 +16,7 @@ const playerMass=60000
 const physicsSettings=[0.2,0.1,9.8]
 const timescale=1
 const tractionForceRatio=2
+const projectileReloadTime=1;
 //classes
 class InputHandler {
     constructor(game){
@@ -85,20 +86,6 @@ class InputHandler {
     }
 }
 
-class Block{
-    constructor(game){
-        this.game=game;
-        this.geo = new THREE.BoxGeometry(500,1,500);
-        this.mat= new THREE.MeshStandardMaterial({
-            color: 0xcffffff,
-            flatShading: true
-        });
-        this.mesh= new THREE.Mesh(this.geo,this.mat);
-        this.mesh.position.y=-3;
-        this.game.scene.add(this.mesh)
-    }
-};
-
 class Terrain{
     constructor(game){
         this.game=game
@@ -142,10 +129,41 @@ class Terrain{
     }
 }
 
+class Projectile{
+    constructor(player,orientation,position){
+        this.player=player
+        this.bulletGeo= new THREE.CylinderGeometry(9,9,30)
+        this.bulletGeo.rotateX(Math.PI / 2)
+        this.bulletMat= new THREE.MeshStandardMaterial({
+            color: 0xcffffff,
+            flatShading:true
+        });
+        this.bullet= new THREE.Mesh(this.bulletGeo,this.bulletMat);
+        this.bullet.quaternion.copy(orientation)
+        this.bullet.position.set(position.x,position.y,position.z)
+        this.player.game.scene.add(this.bullet)
+        //
+        var forward = new THREE.Vector3(0, 0, 10);
+        forward.applyQuaternion(orientation);
+        this.speedX=forward.x;
+        this.speedY=forward.y;
+        this.speedZ=forward.z;
+    }
+    update() {
+        this.bullet.position.x+=this.speedX * this.player.game.time; 
+        this.bullet.position.y+=this.speedY * this.player.game.time; 
+        this.bullet.position.z+=this.speedZ * this.player.game.time; 
+    }
+}
+
 class Player{
     constructor(game,mass,length,width,height){
         this.game=game;
-        this.mass=mass
+        this.mass=mass;
+        // Projectiles
+        this.armed=false;
+        this.reload=projectileReloadTime;
+        this.projectiles=[]
         // Chassis
         this.chassisL=length
         this.chassisW=width
@@ -190,7 +208,10 @@ class Player{
         this.turretPivot.add(this.cameraPivot)
         // Camera Arm
         this.cameraArm = new THREE.Object3D();
-        this.cameraArm.position.set(0, 500, -1500); 
+        this.cameraXi=0
+        this.cameraYi=500
+        this.cameraZi=-1500
+        this.cameraArm.position.set(this.cameraXi,this.cameraYi,this.cameraZi); 
         this.cameraArm.rotation.y=Math.PI;
         this.cameraPivot.add(this.cameraArm);
         this.CObject=new CObject(this,this.game.terrain,physicsSettings)
@@ -210,6 +231,26 @@ class Player{
             this.gun.add(gltf.scene);
         });
     }
+    handleProjectiles(){
+        if (!this.armed){
+            this.reload-=this.game.time
+        }
+        if (this.reload<=0) {
+            this.reload=projectileReloadTime
+            this.armed=true
+        }
+        if ((this.game.keyShoot)&&(this.armed)){
+            this.armed=false
+            var gunRotation= new THREE.Quaternion();
+            this.gunPivot.getWorldQuaternion(gunRotation);
+            var gunPosition= new THREE.Vector3();
+            this.gunPivot.getWorldPosition(gunPosition);
+            this.projectiles.push(new Projectile(this,gunRotation,gunPosition))
+        }
+        for (let proj of this.projectiles){
+            proj.update()
+        }
+    }
     update(){
         if (locked){
             if ((this.game.keySCam) || (this.game.keySKCam)) {
@@ -218,6 +259,7 @@ class Player{
                 this.cameraArm.add(this.game.camera.camera)
             }
         }
+        this.handleProjectiles()
         this.CObject.update()
     }
 };
@@ -379,7 +421,7 @@ class Camera{
             this.maxZoomScale = 1.5;
             this.zoomSpeed = 0.001;
             window.addEventListener("wheel", e => {
-                if (!((this.game.keySCam)||(this.game.keySKCam))){
+                if ((this.game.keySCam==false)&&(this.game.keySKCam==false)){
                     this.game.player.cameraArm.position.x += e.deltaY * this.zoomSpeed * this.game.player.cameraXi;
                     this.game.player.cameraArm.position.x = Math.max(
                         this.minZoomScale * this.game.player.cameraXi,
@@ -398,6 +440,7 @@ class Camera{
                         Math.max(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
                     );
                 }
+                console.log()
             }, { passive: false });
         } else{
             this.camera.position.set(0,900,-800);
@@ -465,7 +508,6 @@ class Game{
             });
         // Player
         this.player=new Player(this,playerMass,chassisBoxLength,chassisBoxWidth,chassisBoxHeight);
-        this.test=new Block(this);
     }
     resize(newWidth, newHeight){
         this.width= newWidth;
