@@ -13,10 +13,12 @@ const pixelPerMeter=chassisBoxWidth/tankWidth
 const tankLength=chassisBoxLength/pixelPerMeter
 const tankHeight=chassisBoxHeight/pixelPerMeter
 const playerMass=60000
-const physicsSettings=[0.2,0.1,9.8]
+const physicsSettings=[0.16,0.13,9.8]
 const timescale=1
-const tractionForceRatio=2
+const tractionForceRatio=0.2
 const projectileReloadTime=1;
+const maxVelocity=7
+const maxAngVel=1
 //classes
 class InputHandler {
     constructor(game){
@@ -157,7 +159,7 @@ class Projectile{
 }
 
 class Player{
-    constructor(game,mass,length,width,height){
+    constructor(game,mass,chassisDimensions,realDimensions){
         this.game=game;
         this.mass=mass;
         // Projectiles
@@ -165,12 +167,12 @@ class Player{
         this.reload=projectileReloadTime;
         this.projectiles=[]
         // Chassis
-        this.chassisL=length
-        this.chassisW=width
-        this.chassisH=height
-        this.objL=this.chassisL/this.game.pixelPerMeter
-        this.objW=this.chassisW/this.game.pixelPerMeter
-        this.objH=this.chassisH/this.game.pixelPerMeter
+        this.chassisL=chassisDimensions[0]
+        this.chassisW=chassisDimensions[1]
+        this.chassisH=chassisDimensions[2]
+        this.objL=realDimensions[0]
+        this.objW=realDimensions[1]
+        this.objH=realDimensions[2]
         this.obj= new THREE.Object3D();
         this.obj.position.set(0,700,0)
         this.game.scene.add(this.obj)
@@ -260,6 +262,19 @@ class Player{
             }
         }
         this.handleProjectiles()
+        this.CObject.updateState()
+        if (this.game.keyFwd){
+            this.CObject.forwards()
+        }
+        if (this.game.keyBwd){
+            this.CObject.backwards()
+        }
+        if (this.game.keyRight){
+            this.CObject.right()
+        }
+        if (this.game.keyLeft){
+            this.CObject.left()
+        }
         this.CObject.update()
     }
 };
@@ -293,56 +308,65 @@ class CObject{
         this.updateState()
     } 
     update(){
-        this.updateState()
         this.updatePosition()
         this.updateProjection()
     }
     updateState(){
-        this.torqueY =0
+        this.torqueY = 0
         this.forces=[0,0,0]
         if ((this.velocity.x==0)&&(this.velocity.z==0)&&(this.angVelY==0)){
             this.cFriction=this.cosf;
         } else {
             this.cFriction=this.codf;
         }
+        this.forward = new THREE.Vector3(0, 0, tractionForceRatio*this.object.mass*this.g);
+        this.forward.applyEuler(new THREE.Euler(0,this.rotation,0));
+    }
+    forwards(){
+        this.forces[0]+=this.forward.x
+        this.forces[2]+=this.forward.z
+    }
+    backwards(){
+        this.forces[0]-=this.forward.x
+        this.forces[2]-=this.forward.z
+    }
+    right(){
+        this.torqueY -= tractionForceRatio*this.object.mass*this.g*(this.object.objW/2);
+    }
+    left(){
+        this.torqueY += tractionForceRatio*this.object.mass*this.g*(this.object.objW/2);
     }
     updatePosition(){
-        var forward = new THREE.Vector3(0, 0, tractionForceRatio*this.object.mass);
-        forward.applyEuler(new THREE.Euler(0,this.rotation,0));
-        if (this.object.game.keyFwd){
-            this.forces=[forward.x,0,forward.z]
-        }
-        if (this.object.game.keyBwd){
-            this.forces=[-forward.x,0,-forward.z]
-        }
         this.acceleration=[this.forces[0]/this.object.mass,0,this.forces[2]/this.object.mass]
         this.velocity.x += this.acceleration[0]*this.object.game.time
         this.velocity.z += this.acceleration[2]*this.object.game.time
         //friction
         if (this.velocity.length()>this.cFriction*this.g*this.object.game.time){
-            this.velocity.addScaledVector(this.velocity, -this.cFriction*this.g*this.object.game.time);
+            this.velocity.addScaledVector(this.velocity, -this.cFriction*this.g*this.object.game.time/this.velocity.length());
         } else {
             this.velocity.set(0,0,0)
         }
 
+        if (this.velocity.length()>maxVelocity){
+            this.velocity.setLength(maxVelocity)
+        }
+        console.log(this.velocity.length())
+
         this.object.obj.position.x+=this.velocity.x*this.object.game.time*this.pixelPerMeter
         this.object.obj.position.z+=this.velocity.z*this.object.game.time*this.pixelPerMeter
-        
-        if (this.object.game.keyRight){
-            this.torqueY = -3.7*tractionForceRatio*this.object.mass/tankWidth;
-        }
-        if (this.object.game.keyLeft){
-            this.torqueY = 3.7*tractionForceRatio*this.object.mass/tankWidth;
-        }
 
         this.angAccY=this.torqueY/this.inertiaY
         this.angVelY+=this.angAccY*this.object.game.time
         //Friction
-        if (Math.abs(this.angVelY)>this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time){
-            this.angVelY-=Math.sign(this.angVelY)*this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time
+        if (Math.abs(this.angVelY)>(this.object.objW/2)*this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time){
+            this.angVelY-=Math.sign(this.angVelY)*(this.object.objW/2)*this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time
         } else {
             this.angVelY=0
         }
+
+        this.angVelY = Math.max(-maxAngVel, Math.min(maxAngVel,this.angVelY))
+        console.log(this.angVelY)
+
         this.rotation+=this.angVelY*this.object.game.time
         this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.object.game.time));
     }
@@ -440,7 +464,6 @@ class Camera{
                         Math.max(this.maxZoomScale * this.game.player.cameraZi, this.game.player.cameraArm.position.z)
                     );
                 }
-                console.log()
             }, { passive: false });
         } else{
             this.camera.position.set(0,900,-800);
@@ -507,7 +530,7 @@ class Game{
                 this.pmrem.dispose();
             });
         // Player
-        this.player=new Player(this,playerMass,chassisBoxLength,chassisBoxWidth,chassisBoxHeight);
+        this.player=new Player(this,playerMass,[chassisBoxLength,chassisBoxWidth,chassisBoxHeight],[tankLength,tankWidth,tankHeight]);
     }
     resize(newWidth, newHeight){
         this.width= newWidth;
