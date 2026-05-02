@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Explosion } from "./explosion.js";
 import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
@@ -17,6 +18,7 @@ const physicsSettings=[0.16,0.13,9.8]
 const timescale=1
 const tractionForceRatio=0.2
 const projectileReloadTime=1;
+const projectileRenderDistance = 100;
 const maxVelocity=7
 const maxAngVel=1
 //classes
@@ -144,19 +146,49 @@ class Projectile{
         this.bullet.quaternion.copy(orientation)
         this.bullet.position.set(position.x,position.y,position.z)
         this.player.game.scene.add(this.bullet)
-        //
+
         var forward = new THREE.Vector3(0, 0, 10);
         forward.applyQuaternion(orientation);
         this.speedX=forward.x;
         this.speedY=forward.y;
         this.speedZ=forward.z;
+        this.deltapos = 0;
+        this.bullet.position.x+=this.speedX * 0.39 * this.player.game.pixelPerMeter; 
+        this.bullet.position.y+=this.speedY * 0.39 * this.player.game.pixelPerMeter; 
+        this.bullet.position.z+=this.speedZ * 0.39 * this.player.game.pixelPerMeter; 
+        this.explosion = null;
+        this.dead = false;
     }
     update() {
-        this.bullet.position.x+=this.speedX * this.player.game.time * this.player.game.pixelPerMeter; 
-        this.bullet.position.y+=this.speedY * this.player.game.time * this.player.game.pixelPerMeter; 
-        this.bullet.position.z+=this.speedZ * this.player.game.time * this.player.game.pixelPerMeter; 
+        if (this.explosion == null) {
+            this.deltapos += 10 * this.player.game.time * this.player.game.pixelPerMeter; 
+            this.bullet.position.x+=this.speedX * this.player.game.time * this.player.game.pixelPerMeter; 
+            this.bullet.position.y+=this.speedY * this.player.game.time * this.player.game.pixelPerMeter; 
+            this.bullet.position.z+=this.speedZ * this.player.game.time * this.player.game.pixelPerMeter; 
+            if (this.player.game.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
+                this.explosion = new Explosion(this.player.game, this.bullet.position, false);
+                this._dispose();
+            }
+            if (this.deltapos > projectileRenderDistance * this.player.game.pixelPerMeter) {
+                this._dispose();
+                this.dead = true;
+            }
+        } else {
+            this.explosion.update();
+            if (this.explosion.dead) {
+                this.dead = true;
+            }
+        }
+
+    }
+    _dispose() {
+        this.player.game.scene.remove(this.bullet);
+        this.bullet.geometry.dispose();
+        this.bullet.material.dispose();
+        this.bullet = null;
     }
 }
+
 
 class Player{
     constructor(game,mass,chassisDimensions,realDimensions){
@@ -249,9 +281,13 @@ class Player{
             this.gunPivot.getWorldPosition(gunPosition);
             this.projectiles.push(new Projectile(this,gunRotation,gunPosition))
         }
-        for (let proj of this.projectiles){
-            proj.update()
+        for (let i = 0; i < this.projectiles.length; i++){
+            this.projectiles[i].update()
+            if (this.projectiles[i].dead) {
+                this.projectiles.splice(i, 1);
+            }
         }
+        console.log(this.projectiles);
     }
     update(){
         if (locked){
@@ -350,7 +386,6 @@ class CObject{
         if (this.velocity.length()>maxVelocity){
             this.velocity.setLength(maxVelocity)
         }
-        console.log(this.velocity.length())
 
         this.object.obj.position.x+=this.velocity.x*this.object.game.time*this.pixelPerMeter
         this.object.obj.position.z+=this.velocity.z*this.object.game.time*this.pixelPerMeter
@@ -365,7 +400,6 @@ class CObject{
         }
 
         this.angVelY = Math.max(-maxAngVel, Math.min(maxAngVel,this.angVelY))
-        console.log(this.angVelY)
 
         this.rotation+=this.angVelY*this.object.game.time
         this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.object.game.time));
@@ -428,6 +462,8 @@ class Camera{
         this.nearLimit = 0.1; //<near no render
         this.farLimit = 50000; //>far no render
         this.camera = new THREE.PerspectiveCamera(this.fov,this.aspect,this.nearLimit,this.farLimit);
+        this.listener = new THREE.AudioListener();
+        this.camera.add(this.listener);
         if (locked){
             this.yaw = 0;
             this.pitch = 0;
@@ -531,6 +567,8 @@ class Game{
             });
         // Player
         this.player=new Player(this,playerMass,[chassisBoxLength,chassisBoxWidth,chassisBoxHeight],[tankLength,tankWidth,tankHeight]);
+
+        this.audioLoader = new THREE.AudioLoader();
     }
     resize(newWidth, newHeight){
         this.width= newWidth;
