@@ -149,13 +149,13 @@ class Projectile{
 
         var forward = new THREE.Vector3(0, 0, 10);
         forward.applyQuaternion(orientation);
-        this.speedX=forward.x;
+        this.speedX=forward.x + this.player.CObject.velocity.x;
         this.speedY=forward.y;
-        this.speedZ=forward.z;
+        this.speedZ=forward.z + this.player.CObject.velocity.z;
         this.deltapos = 0;
-        this.bullet.position.x+=this.speedX * 0.39 * this.player.game.pixelPerMeter; 
-        this.bullet.position.y+=this.speedY * 0.39 * this.player.game.pixelPerMeter; 
-        this.bullet.position.z+=this.speedZ * 0.39 * this.player.game.pixelPerMeter; 
+        this.bullet.position.x+=forward.x * 0.39 * this.player.game.pixelPerMeter; 
+        this.bullet.position.y+=forward.y * 0.39 * this.player.game.pixelPerMeter; 
+        this.bullet.position.z+=forward.z * 0.39 * this.player.game.pixelPerMeter; 
         this.explosion = null;
         this.dead = false;
     }
