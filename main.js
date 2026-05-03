@@ -19,8 +19,24 @@ const timescale=1
 const tractionForceRatio=0.2
 const projectileReloadTime=1.5;
 const projectileRenderDistance = 100;
-const maxVelocity=7
-const maxAngVel=1
+const maxVelocity=5
+const maxAngVel=0.5
+const trackSoundLimit = 1
+
+function fadeOut(sound, duration = 0.7) {
+    const now = sound.context.currentTime;
+    const gain = sound.gain.gain;
+
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + duration);
+
+    setTimeout(() => {
+        sound.stop();
+        gain.setValueAtTime(1.0, sound.context.currentTime);
+    }, duration * 1000);
+}
+
 //classes
 class InputHandler {
     constructor(game){
@@ -267,7 +283,29 @@ class Tank{
         this.game.scene.add(this.obj)
         // Track Sound
         this.trackSound = new THREE.PositionalAudio(this.game.camera.listener);
+        this.trackFade = false;
         this.obj.add(this.trackSound);
+        this.game.audioLoader.load("/assets/track.mp3", (buffer) => {
+            this.trackSound.setBuffer(buffer);
+            this.trackSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
+            this.trackSound.setVolume(1.0);
+        });
+        this.accSound = new THREE.PositionalAudio(this.game.camera.listener);
+        this.accFade = false;
+        this.obj.add(this.accSound);
+        this.game.audioLoader.load("/assets/acc.mp3", (buffer) => {
+            this.accSound.setBuffer(buffer);
+            this.accSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
+            this.accSound.setVolume(1.0);
+        });
+        this.decSound = new THREE.PositionalAudio(this.game.camera.listener);
+        this.decFade = false;
+        this.obj.add(this.decSound);
+        this.game.audioLoader.load("/assets/dec.mp3", (buffer) => {
+            this.decSound.setBuffer(buffer);
+            this.decSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
+            this.decSound.setVolume(1.0);
+        });
         // Collision
         this.collisionBox= new THREE.BoxGeometry(this.chassisW,this.chassisH,this.chassisL)
         this.collisionMat= new THREE.MeshStandardMaterial({
@@ -295,6 +333,11 @@ class Tank{
         // Track Sound
         this.fireSound = new THREE.PositionalAudio(this.game.camera.listener);
         this.gunPivot.add(this.fireSound);
+        this.game.audioLoader.load("/assets/firing.mp3", (buffer) => {
+            this.fireSound.setBuffer(buffer);
+            this.fireSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
+            this.fireSound.setVolume(1.0);
+        });
 
         this.loadModels();
 
@@ -308,6 +351,7 @@ class Tank{
         this.forces=[0,0,0]
         this.acceleration=[0,0,0]
         this.velocity=new THREE.Vector3(0,0,0)
+        this.totalVelocity = 0;
 
         this.torqueY=0
         this.angAccY=0
@@ -363,12 +407,7 @@ class Tank{
             var gunPosition= new THREE.Vector3();
             this.gunPivot.getWorldPosition(gunPosition);
             this.projectiles.push(new Projectile(this,gunRotation,gunPosition))
-            this.game.audioLoader.load("/assets/firing.mp3", (buffer) => {
-                this.fireSound.setBuffer(buffer);
-                this.fireSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
-                this.fireSound.setVolume(1.0);
-                this.fireSound.play();
-            });
+            this.fireSound.play();
         }
     }
     updateState(){
@@ -410,9 +449,33 @@ class Tank{
         if (this.velocity.length()>maxVelocity){
             this.velocity.setLength(maxVelocity)
         }
-
+        const prevVelocity = this.totalVelocity
+        this.totalVelocity = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
         this.obj.position.x+=this.velocity.x*this.game.time*this.pixelPerMeter
         this.obj.position.z+=this.velocity.z*this.game.time*this.pixelPerMeter
+
+        console.log(this.totalVelocity)
+        console.log(this.trackSound.isPlaying)
+        //track sounds
+        if ((!this.trackSound.isPlaying) && (this.totalVelocity > trackSoundLimit + 0.3)) {
+            this.trackFade = false;
+            this.trackSound.play();
+            this.decSound.stop()
+        }
+        if ((this.trackSound.isPlaying) && (this.totalVelocity <= trackSoundLimit - 0.3) && (!this.trackFade)) {
+            this.trackFade = true;
+            fadeOut(this.trackSound,0.7);
+            this.decSound.play();
+        }
+        if ((!this.accSound.isPlaying) && (this.totalVelocity > prevVelocity)) {
+            this.accFade = false;
+            this.accSound.play();
+        }
+        if ((this.accSound.isPlaying) && (this.totalVelocity <= prevVelocity) && (!this.accFade)) {
+            this.accFade = true;
+            fadeOut(this.accSound,0.05);
+        }
+
 
         this.angAccY=this.torqueY/this.inertiaY
         this.angVelY+=this.angAccY*this.game.time
@@ -546,7 +609,8 @@ class Game{
             if (document.hidden) {
                 this.hiddenLastTime = performance.now();
             }
-        });        
+        });
+        this.audioLoader = new THREE.AudioLoader();
         this.pixelPerMeter=pixelPerMeter
         // Renderer
         this.width= window.innerWidth;
@@ -591,8 +655,6 @@ class Game{
             });
         // Player
         this.player=new Player(this);
-
-        this.audioLoader = new THREE.AudioLoader();
     }
     resize(newWidth, newHeight){
         this.width= newWidth;
