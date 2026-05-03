@@ -2,9 +2,8 @@ import * as THREE from "three";
 
 export class Explosion {
   constructor(game, position, continuous) {
-    console.log(continuous)
-    this.scale = 690/3.7;
     this.game = game;
+    this.scale = this.game.pixelPerMeter;
     this.scene = game.scene;
     this.continuous = continuous;
 
@@ -176,10 +175,8 @@ export class Explosion {
 
   update() {
     this.time += this.game.time;
-    console.log(this.time)
     
     if (this.time > (this.duration - 0.9) && this.continuous) {
-      console.log("next")
       this.oldGroups.push({
         group: this.group,
         fire: this.fire,
@@ -213,7 +210,6 @@ export class Explosion {
       const g = this.oldGroups[i];
 
       g.startTime += this.game.time;
-      console.log(g.startTime)
   
       if (g.fire) g.fire.material.uniforms.uTime.value = g.startTime;
       if (g.smoke) g.smoke.material.uniforms.uTime.value = g.startTime - smokeDelay;

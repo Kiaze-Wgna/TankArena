@@ -14,10 +14,10 @@ const pixelPerMeter=chassisBoxWidth/tankWidth
 const tankLength=chassisBoxLength/pixelPerMeter
 const tankHeight=chassisBoxHeight/pixelPerMeter
 const playerMass=60000
-const physicsSettings=[0.16,0.13,9.8]
+const physicsSettings=[playerMass,chassisBoxLength,chassisBoxWidth,chassisBoxHeight,tankLength,tankWidth,tankHeight,0.16,0.13,9.8]
 const timescale=1
 const tractionForceRatio=0.2
-const projectileReloadTime=1;
+const projectileReloadTime=1.5;
 const projectileRenderDistance = 100;
 const maxVelocity=7
 const maxAngVel=1
@@ -134,8 +134,8 @@ class Terrain{
 }
 
 class Projectile{
-    constructor(player,orientation,position){
-        this.player=player
+    constructor(tank,orientation,position){
+        this.tank=tank
         this.bulletGeo= new THREE.CylinderGeometry(9,9,30)
         this.bulletGeo.rotateX(Math.PI / 2)
         this.bulletMat= new THREE.MeshStandardMaterial({
@@ -145,31 +145,31 @@ class Projectile{
         this.bullet= new THREE.Mesh(this.bulletGeo,this.bulletMat);
         this.bullet.quaternion.copy(orientation)
         this.bullet.position.set(position.x,position.y,position.z)
-        this.player.game.scene.add(this.bullet)
+        this.tank.game.scene.add(this.bullet)
 
         var forward = new THREE.Vector3(0, 0, 10);
         forward.applyQuaternion(orientation);
-        this.speedX=forward.x + this.player.CObject.velocity.x;
+        this.speedX=forward.x + this.tank.velocity.x;
         this.speedY=forward.y;
-        this.speedZ=forward.z + this.player.CObject.velocity.z;
+        this.speedZ=forward.z + this.tank.velocity.z;
         this.deltapos = 0;
-        this.bullet.position.x+=forward.x * 0.39 * this.player.game.pixelPerMeter; 
-        this.bullet.position.y+=forward.y * 0.39 * this.player.game.pixelPerMeter; 
-        this.bullet.position.z+=forward.z * 0.39 * this.player.game.pixelPerMeter; 
+        this.bullet.position.x+=forward.x * 0.39 * this.tank.pixelPerMeter; 
+        this.bullet.position.y+=forward.y * 0.39 * this.tank.pixelPerMeter; 
+        this.bullet.position.z+=forward.z * 0.39 * this.tank.pixelPerMeter; 
         this.explosion = null;
         this.dead = false;
     }
     update() {
         if (this.explosion == null) {
-            this.deltapos += 10 * this.player.game.time * this.player.game.pixelPerMeter; 
-            this.bullet.position.x+=this.speedX * this.player.game.time * this.player.game.pixelPerMeter; 
-            this.bullet.position.y+=this.speedY * this.player.game.time * this.player.game.pixelPerMeter; 
-            this.bullet.position.z+=this.speedZ * this.player.game.time * this.player.game.pixelPerMeter; 
-            if (this.player.game.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
-                this.explosion = new Explosion(this.player.game, this.bullet.position, false);
+            this.deltapos += 10 * this.tank.game.time * this.tank.pixelPerMeter; 
+            this.bullet.position.x+=this.speedX * this.tank.game.time * this.tank.pixelPerMeter; 
+            this.bullet.position.y+=this.speedY * this.tank.game.time * this.tank.pixelPerMeter; 
+            this.bullet.position.z+=this.speedZ * this.tank.game.time * this.tank.pixelPerMeter; 
+            if (this.tank.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
+                this.explosion = new Explosion(this.tank.game, this.bullet.position, false);
                 this._dispose();
             }
-            if (this.deltapos > projectileRenderDistance * this.player.game.pixelPerMeter) {
+            if (this.deltapos > projectileRenderDistance * this.tank.pixelPerMeter) {
                 this._dispose();
                 this.dead = true;
             }
@@ -182,32 +182,92 @@ class Projectile{
 
     }
     _dispose() {
-        this.player.game.scene.remove(this.bullet);
+        this.tank.game.scene.remove(this.bullet);
         this.bullet.geometry.dispose();
         this.bullet.material.dispose();
         this.bullet = null;
     }
 }
 
-
 class Player{
-    constructor(game,mass,chassisDimensions,realDimensions){
+    constructor(game){
         this.game=game;
-        this.mass=mass;
+        this.tank=new Tank(this.game,this.game.terrain,physicsSettings);
+        this.turretPivot = this.tank.turretPivot
+        this.gunPivot = this.tank.gunPivot
+        
+        // Shooting Camera Arm
+        this.cameraShootArm= new THREE.Object3D();
+        this.cameraShootArm.position.set(0,58,10);
+        this.cameraShootArm.rotation.y=Math.PI;
+        this.gunPivot.add(this.cameraShootArm);
+        // Camera Pivot
+        this.cameraPivot= new THREE.Object3D();
+        this.turretPivot.add(this.cameraPivot)
+        // Camera Arm
+        this.cameraArm = new THREE.Object3D();
+        this.cameraXi=0
+        this.cameraYi=500
+        this.cameraZi=-1500
+        this.cameraArm.position.set(this.cameraXi,this.cameraYi,this.cameraZi); 
+        this.cameraArm.rotation.y=Math.PI;
+        this.cameraPivot.add(this.cameraArm);
+        
+        if (locked){
+            this.cameraArm.add(this.game.camera.camera)
+        }
+    }
+    update(){
+        if (locked){
+            if ((this.game.keySCam) || (this.game.keySKCam)) {
+                this.cameraShootArm.add(this.game.camera.camera)
+            } else {
+                this.cameraArm.add(this.game.camera.camera)
+            }
+        }
+        this.tank.updateState()
+        if (this.game.keyShoot){
+            this.tank.shoot();
+        }
+        if (this.game.keyFwd){
+            this.tank.forwards()
+        }
+        if (this.game.keyBwd){
+            this.tank.backwards()
+        }
+        if (this.game.keyRight){
+            this.tank.right()
+        }
+        if (this.game.keyLeft){
+            this.tank.left()
+        }
+        this.tank.update()
+    }
+};
+
+class Tank{
+    constructor(game,terrain,settings){
+        this.game=game
+
         // Projectiles
         this.armed=false;
         this.reload=projectileReloadTime;
-        this.projectiles=[]
+        this.projectiles=[];
+
         // Chassis
-        this.chassisL=chassisDimensions[0]
-        this.chassisW=chassisDimensions[1]
-        this.chassisH=chassisDimensions[2]
-        this.objL=realDimensions[0]
-        this.objW=realDimensions[1]
-        this.objH=realDimensions[2]
+        this.mass=settings[0];
+        this.chassisL=settings[1]
+        this.chassisW=settings[2]
+        this.chassisH=settings[3]
+        this.objL=settings[4]
+        this.objW=settings[5]
+        this.objH=settings[6]
         this.obj= new THREE.Object3D();
         this.obj.position.set(0,700,0)
         this.game.scene.add(this.obj)
+        // Track Sound
+        this.trackSound = new THREE.PositionalAudio(this.game.camera.listener);
+        this.obj.add(this.trackSound);
         // Collision
         this.collisionBox= new THREE.BoxGeometry(this.chassisW,this.chassisH,this.chassisL)
         this.collisionMat= new THREE.MeshStandardMaterial({
@@ -229,31 +289,40 @@ class Player{
         this.gunPivot= new THREE.Object3D();
         this.gunPivot.position.set(0,58,235);
         this.turretPivot.add(this.gunPivot)
-        // Shooting Camera Arm
-        this.cameraShootArm= new THREE.Object3D();
-        this.cameraShootArm.position.set(0,58,10);
-        this.cameraShootArm.rotation.y=Math.PI;
-        this.gunPivot.add(this.cameraShootArm);
         // Gun
         this.gun= new THREE.Object3D();
         this.gunPivot.add(this.gun);
-        // Camera Pivot
-        this.cameraPivot= new THREE.Object3D();
-        this.turretPivot.add(this.cameraPivot)
-        // Camera Arm
-        this.cameraArm = new THREE.Object3D();
-        this.cameraXi=0
-        this.cameraYi=500
-        this.cameraZi=-1500
-        this.cameraArm.position.set(this.cameraXi,this.cameraYi,this.cameraZi); 
-        this.cameraArm.rotation.y=Math.PI;
-        this.cameraPivot.add(this.cameraArm);
-        this.CObject=new CObject(this,this.game.terrain,physicsSettings)
-        if (locked){
-            this.cameraArm.add(this.game.camera.camera)
-        }
+        // Track Sound
+        this.fireSound = new THREE.PositionalAudio(this.game.camera.listener);
+        this.gunPivot.add(this.fireSound);
+
         this.loadModels();
-    }
+
+        this.cosf=settings[7]
+        this.codf=settings[8]
+        this.g=settings[9]
+        this.accuracy=1
+        this.terrain=terrain
+        this.pixelPerMeter=this.game.pixelPerMeter
+
+        this.forces=[0,0,0]
+        this.acceleration=[0,0,0]
+        this.velocity=new THREE.Vector3(0,0,0)
+
+        this.torqueY=0
+        this.angAccY=0
+        this.inertiaY = this.mass * ( (this.objW*this.objW + this.objL*this.objL) / 12 );
+        this.angVelY=0
+        this.rotation=0
+
+        this.obj.position.x=0
+        this.obj.position.y=0
+        this.obj.position.z=0
+        this.yawQuat = new THREE.Quaternion();
+        this.tiltQuat = new THREE.Quaternion();
+
+        this.updateState()
+    } 
     loadModels(){
         this.game.loader.load("/assets/chassis.glb", (gltf) => {
             this.obj.add(gltf.scene);
@@ -265,6 +334,11 @@ class Player{
             this.gun.add(gltf.scene);
         });
     }
+    update(){
+        this.updatePosition()
+        this.updateProjection()
+        this.handleProjectiles()
+    }
     handleProjectiles(){
         if (!this.armed){
             this.reload-=this.game.time
@@ -273,79 +347,29 @@ class Player{
             this.reload=projectileReloadTime
             this.armed=true
         }
-        if ((this.game.keyShoot)&&(this.armed)){
-            this.armed=false
-            var gunRotation= new THREE.Quaternion();
-            this.gunPivot.getWorldQuaternion(gunRotation);
-            var gunPosition= new THREE.Vector3();
-            this.gunPivot.getWorldPosition(gunPosition);
-            this.projectiles.push(new Projectile(this,gunRotation,gunPosition))
-        }
+        
         for (let i = 0; i < this.projectiles.length; i++){
             this.projectiles[i].update()
             if (this.projectiles[i].dead) {
                 this.projectiles.splice(i, 1);
             }
         }
-        console.log(this.projectiles);
     }
-    update(){
-        if (locked){
-            if ((this.game.keySCam) || (this.game.keySKCam)) {
-                this.cameraShootArm.add(this.game.camera.camera)
-            } else {
-                this.cameraArm.add(this.game.camera.camera)
-            }
+    shoot(){
+        if (this.armed){
+            this.armed=false
+            var gunRotation= new THREE.Quaternion();
+            this.gunPivot.getWorldQuaternion(gunRotation);
+            var gunPosition= new THREE.Vector3();
+            this.gunPivot.getWorldPosition(gunPosition);
+            this.projectiles.push(new Projectile(this,gunRotation,gunPosition))
+            this.game.audioLoader.load("/assets/firing.mp3", (buffer) => {
+                this.fireSound.setBuffer(buffer);
+                this.fireSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
+                this.fireSound.setVolume(1.0);
+                this.fireSound.play();
+            });
         }
-        this.handleProjectiles()
-        this.CObject.updateState()
-        if (this.game.keyFwd){
-            this.CObject.forwards()
-        }
-        if (this.game.keyBwd){
-            this.CObject.backwards()
-        }
-        if (this.game.keyRight){
-            this.CObject.right()
-        }
-        if (this.game.keyLeft){
-            this.CObject.left()
-        }
-        this.CObject.update()
-    }
-};
-
-class CObject{
-    constructor(object,terrain,settings){
-        this.cosf=settings[0]
-        this.codf=settings[1]
-        this.g=settings[2]
-        this.accuracy=1
-        this.object=object
-        this.terrain=terrain
-        this.pixelPerMeter=this.object.game.pixelPerMeter
-
-        this.forces=[0,0,0]
-        this.acceleration=[0,0,0]
-        this.velocity=new THREE.Vector3(0,0,0)
-
-        this.torqueY=0
-        this.angAccY=0
-        this.inertiaY = this.object.mass * ( (this.object.objW*this.object.objW + this.object.objL*this.object.objL) / 12 );
-        this.angVelY=0
-        this.rotation=0
-
-        this.object.obj.position.x=0
-        this.object.obj.position.y=0
-        this.object.obj.position.z=0
-        this.yawQuat = new THREE.Quaternion();
-        this.tiltQuat = new THREE.Quaternion();
-
-        this.updateState()
-    } 
-    update(){
-        this.updatePosition()
-        this.updateProjection()
     }
     updateState(){
         this.torqueY = 0
@@ -355,7 +379,7 @@ class CObject{
         } else {
             this.cFriction=this.codf;
         }
-        this.forward = new THREE.Vector3(0, 0, tractionForceRatio*this.object.mass*this.g);
+        this.forward = new THREE.Vector3(0, 0, tractionForceRatio*this.mass*this.g);
         this.forward.applyEuler(new THREE.Euler(0,this.rotation,0));
     }
     forwards(){
@@ -367,18 +391,18 @@ class CObject{
         this.forces[2]-=this.forward.z
     }
     right(){
-        this.torqueY -= tractionForceRatio*this.object.mass*this.g*(this.object.objW/2);
+        this.torqueY -= tractionForceRatio*this.mass*this.g*(this.objW/2);
     }
     left(){
-        this.torqueY += tractionForceRatio*this.object.mass*this.g*(this.object.objW/2);
+        this.torqueY += tractionForceRatio*this.mass*this.g*(this.objW/2);
     }
     updatePosition(){
-        this.acceleration=[this.forces[0]/this.object.mass,0,this.forces[2]/this.object.mass]
-        this.velocity.x += this.acceleration[0]*this.object.game.time
-        this.velocity.z += this.acceleration[2]*this.object.game.time
+        this.acceleration=[this.forces[0]/this.mass,0,this.forces[2]/this.mass]
+        this.velocity.x += this.acceleration[0]*this.game.time
+        this.velocity.z += this.acceleration[2]*this.game.time
         //friction
-        if (this.velocity.length()>this.cFriction*this.g*this.object.game.time){
-            this.velocity.addScaledVector(this.velocity, -this.cFriction*this.g*this.object.game.time/this.velocity.length());
+        if (this.velocity.length()>this.cFriction*this.g*this.game.time){
+            this.velocity.addScaledVector(this.velocity, -this.cFriction*this.g*this.game.time/this.velocity.length());
         } else {
             this.velocity.set(0,0,0)
         }
@@ -387,27 +411,27 @@ class CObject{
             this.velocity.setLength(maxVelocity)
         }
 
-        this.object.obj.position.x+=this.velocity.x*this.object.game.time*this.pixelPerMeter
-        this.object.obj.position.z+=this.velocity.z*this.object.game.time*this.pixelPerMeter
+        this.obj.position.x+=this.velocity.x*this.game.time*this.pixelPerMeter
+        this.obj.position.z+=this.velocity.z*this.game.time*this.pixelPerMeter
 
         this.angAccY=this.torqueY/this.inertiaY
-        this.angVelY+=this.angAccY*this.object.game.time
+        this.angVelY+=this.angAccY*this.game.time
         //Friction
-        if (Math.abs(this.angVelY)>(this.object.objW/2)*this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time){
-            this.angVelY-=Math.sign(this.angVelY)*(this.object.objW/2)*this.cFriction*(this.object.mass/this.inertiaY)*this.g*this.object.game.time
+        if (Math.abs(this.angVelY)>(this.objW/2)*this.cFriction*(this.mass/this.inertiaY)*this.g*this.game.time){
+            this.angVelY-=Math.sign(this.angVelY)*(this.objW/2)*this.cFriction*(this.mass/this.inertiaY)*this.g*this.game.time
         } else {
             this.angVelY=0
         }
 
         this.angVelY = Math.max(-maxAngVel, Math.min(maxAngVel,this.angVelY))
 
-        this.rotation+=this.angVelY*this.object.game.time
-        this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.object.game.time));
+        this.rotation+=this.angVelY*this.game.time
+        this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.game.time));
     }
     updateProjection(){
         this.finalQuat = this.yawQuat.clone().multiply(this.tiltQuat);
-        var hw = this.object.chassisW / 2;
-        var hl = this.object.chassisL  / 2;
+        var hw = this.chassisW / 2;
+        var hl = this.chassisL  / 2;
 
         this.corners = [
             new THREE.Vector3( hw, 0,  hl),
@@ -418,7 +442,7 @@ class CObject{
 
         for (let c of this.corners){
             c.applyQuaternion(this.finalQuat);
-            c.add(this.object.obj.position);
+            c.add(this.obj.position);
             c.y = this.terrain.heightAt(c.x, c.z);
         }
 
@@ -448,8 +472,8 @@ class CObject{
 
         euler.y = 0;
         this.tiltQuat.setFromEuler(euler);
-        this.object.obj.quaternion.copy(this.finalQuat);
-        this.object.obj.position.y =
+        this.obj.quaternion.copy(this.finalQuat);
+        this.obj.position.y =
             (this.corners[0].y + this.corners[1].y + this.corners[2].y + this.corners[3].y) * 0.25;
     }
 }
@@ -566,7 +590,7 @@ class Game{
                 this.pmrem.dispose();
             });
         // Player
-        this.player=new Player(this,playerMass,[chassisBoxLength,chassisBoxWidth,chassisBoxHeight],[tankLength,tankWidth,tankHeight]);
+        this.player=new Player(this);
 
         this.audioLoader = new THREE.AudioLoader();
     }
