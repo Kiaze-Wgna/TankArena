@@ -285,7 +285,7 @@ class Tank{
         this.trackSound = new THREE.PositionalAudio(this.game.camera.listener);
         this.trackFade = false;
         this.obj.add(this.trackSound);
-        this.game.audioLoader.load("/assets/track.mp3", (buffer) => {
+        this.game.audioLoader.load("/assets/trackSound.mp3", (buffer) => {
             this.trackSound.setBuffer(buffer);
             this.trackSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
             this.trackSound.setVolume(0.7);
@@ -301,7 +301,7 @@ class Tank{
         this.decSound = new THREE.PositionalAudio(this.game.camera.listener);
         this.decFade = false;
         this.obj.add(this.decSound);
-        this.game.audioLoader.load("/assets/dec.mp3", (buffer) => {
+        this.game.audioLoader.load("/assets/decSound.mp3", (buffer) => {
             this.decSound.setBuffer(buffer);
             this.decSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
             this.decSound.setVolume(1.0);
