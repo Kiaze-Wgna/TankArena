@@ -18,7 +18,7 @@ const physicsSettings=[playerMass,chassisBoxLength,chassisBoxWidth,chassisBoxHei
 const timescale=1
 const tractionForceRatio=0.2
 const projectileReloadTime=1.5;
-const projectileRenderDistance = 100;
+const projectileRenderDistance = 10000;
 const maxVelocity=5
 const maxAngVel=0.5
 const trackSoundLimit = 1
@@ -288,7 +288,7 @@ class Tank{
         this.game.audioLoader.load("/assets/track.mp3", (buffer) => {
             this.trackSound.setBuffer(buffer);
             this.trackSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
-            this.trackSound.setVolume(1.0);
+            this.trackSound.setVolume(0.7);
         });
         this.accSound = new THREE.PositionalAudio(this.game.camera.listener);
         this.accFade = false;
@@ -453,9 +453,6 @@ class Tank{
         this.totalVelocity = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
         this.obj.position.x+=this.velocity.x*this.game.time*this.pixelPerMeter
         this.obj.position.z+=this.velocity.z*this.game.time*this.pixelPerMeter
-
-        console.log(this.totalVelocity)
-        console.log(this.trackSound.isPlaying)
         //track sounds
         if ((!this.trackSound.isPlaying) && (this.totalVelocity > trackSoundLimit + 0.3)) {
             this.trackFade = false;
