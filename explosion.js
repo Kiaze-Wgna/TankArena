@@ -3,7 +3,8 @@ import * as THREE from "three";
 export class Explosion {
   constructor(game, position, continuous) {
     this.game = game;
-    this.scale = this.game.pixelPerMeter;
+    this.position = position;
+    this.pixelPerMeter = this.game.pixelPerMeter;
     this.scene = game.scene;
     this.continuous = continuous;
 
@@ -11,7 +12,7 @@ export class Explosion {
     this.duration = 3;
 
     this.group = new THREE.Group();
-    this.group.position.copy(position);
+    this.group.position.copy(this.position);
     this.scene.add(this.group);
     this.dead = false;
     this.currentFire = true;
@@ -30,10 +31,10 @@ export class Explosion {
   _createFire() {
     this.fire = this._createSystem({
       count: 600,
-      speedMin: 3 * this.scale,
-      speedMax: 7 * this.scale,
-      sizeMin: 10 * this.scale,
-      sizeMax: 30 * this.scale,
+      speedMin: 3 * this.pixelPerMeter,
+      speedMax: 7 * this.pixelPerMeter,
+      sizeMin: 10 * this.pixelPerMeter,
+      sizeMax: 30 * this.pixelPerMeter,
       spread: 0.3,
       upscale: 0.9,
       lifeScale: 0.7,
@@ -46,7 +47,7 @@ export class Explosion {
     this.group.add(this.fire.points);
     this.game.audioLoader.load("/assets/explosion.mp3", (buffer) => {
       this.sound.setBuffer(buffer);
-      this.sound.setRefDistance(5 * this.scale);   // distance where volume is “normal”
+      this.sound.setRefDistance(5 * this.pixelPerMeter);   // distance where volume is “normal”
       this.sound.setVolume(5.0);
       this.sound.play();
     });
@@ -55,10 +56,10 @@ export class Explosion {
   _createSmoke() {
     this.smoke = this._createSystem({
       count: 500,
-      speedMin: 8 * this.scale,
-      speedMax: 10 * this.scale,
-      sizeMin: 5 * this.scale,
-      sizeMax: 15 * this.scale,
+      speedMin: 8 * this.pixelPerMeter,
+      speedMax: 10 * this.pixelPerMeter,
+      sizeMin: 5 * this.pixelPerMeter,
+      sizeMax: 15 * this.pixelPerMeter,
       spread: 0.41,
       upscale: 1.1,
       lifeScale: 0.5,
@@ -86,7 +87,7 @@ export class Explosion {
 
       positions.set([0, 0, 0], i * 3);
 
-      velocities.set([dir.x * speed * spread, Math.abs(dir.y) * speed * opts.upscale + this.scale, dir.z * speed * spread], i * 3);
+      velocities.set([dir.x * speed * spread, Math.abs(dir.y) * speed * opts.upscale + this.pixelPerMeter, dir.z * speed * spread], i * 3);
 
       sizes[i] = opts.sizeMin + Math.random() * (opts.sizeMax - opts.sizeMin);
       life[i] = Math.random();
@@ -98,9 +99,6 @@ export class Explosion {
     geo.setAttribute("life", new THREE.BufferAttribute(life, 1));
 
     const mat = new THREE.ShaderMaterial({
-      defines: {
-        LOOP: opts.continuous ? 1 : 0
-      },
       transparent: true,
       depthWrite: false,
       blending: opts.blending,
@@ -186,6 +184,7 @@ export class Explosion {
       this.currentFire = false;
 
       this.group = new THREE.Group();
+      this.group.position.copy(this.position);
       this.scene.add(this.group);
   
       this.time = 0;

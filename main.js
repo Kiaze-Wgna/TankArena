@@ -18,10 +18,22 @@ const physicsSettings=[playerMass,chassisBoxLength,chassisBoxWidth,chassisBoxHei
 const timescale=1
 const tractionForceRatio=0.2
 const projectileReloadTime=1.5;
-const projectileRenderDistance = 10000;
+const projectileRenderDistance = 100;
 const maxVelocity=5
-const maxAngVel=0.5
 const trackSoundLimit = 1
+const maxAngVel=0.7
+const angVelTrackSoundLimit = 0.47
+const playerStartPosition = [0,0];
+const enemyspawnrange = 50;
+const tankHitboxRadius = chassisBoxLength;
+
+function randnum(lowerLimit,upperLimit) {
+    return lowerLimit + (Math.random() * (upperLimit-lowerLimit));
+}
+
+function getDistance(pos1, pos2) {
+    return Math.sqrt(((pos1.x - pos2.x) ** 2) + ((pos1.y - pos2.y) ** 2) + ((pos1.z - pos2.z) ** 2));
+}
 
 function fadeOut(sound, duration = 0.7) {
     const now = sound.context.currentTime;
@@ -33,8 +45,9 @@ function fadeOut(sound, duration = 0.7) {
 
     setTimeout(() => {
         sound.stop();
+        gain.cancelScheduledValues(now);
         gain.setValueAtTime(1.0, sound.context.currentTime);
-    }, duration * 1000);
+    }, duration * 500);
 }
 
 //classes
@@ -181,14 +194,25 @@ class Projectile{
             this.bullet.position.x+=this.speedX * this.tank.game.time * this.tank.pixelPerMeter; 
             this.bullet.position.y+=this.speedY * this.tank.game.time * this.tank.pixelPerMeter; 
             this.bullet.position.z+=this.speedZ * this.tank.game.time * this.tank.pixelPerMeter; 
+            for (let tank of this.tank.game.tankList) {
+                if (getDistance(tank.obj.position, this.bullet.position) < tankHitboxRadius) {
+                    tank.die();
+                    this._dispose();
+                    this.dead = true;
+                    return;
+                }
+            }
             if (this.tank.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
                 this.explosion = new Explosion(this.tank.game, this.bullet.position, false);
                 this._dispose();
+                return;
             }
             if (this.deltapos > projectileRenderDistance * this.tank.pixelPerMeter) {
                 this._dispose();
                 this.dead = true;
+                return;
             }
+            
         } else {
             this.explosion.update();
             if (this.explosion.dead) {
@@ -205,10 +229,47 @@ class Projectile{
     }
 }
 
+class Enemy{
+    constructor(game,enemyTank){
+        this.game=game;
+        this.enemyTank=enemyTank;
+        const startPosition = [randnum(this.enemyTank.obj.position.x - (enemyspawnrange * this.game.pixelPerMeter),
+                                        this.enemyTank.obj.position.x + (enemyspawnrange * this.game.pixelPerMeter)),
+                                randnum(this.enemyTank.obj.position.z - (enemyspawnrange * this.game.pixelPerMeter),
+                                        this.enemyTank.obj.position.z + (enemyspawnrange * this.game.pixelPerMeter))]
+        this.tank=new Tank(this.game,this.game.terrain,physicsSettings,startPosition);
+        this.kai_input = [0,0,0,0,0]
+        this.kai = null;
+        this.kai_result = [0,0,0,0,0];
+    }
+    update(){
+        this.tank.updateState()
+        if (!this.tank.dead) {
+            this.kai_result = [0,0,0,0,0];
+            if (this.kai_result[0] > 0.5){
+                this.tank.forwards()
+            }
+            if (this.kai_result[1] > 0.5){
+                this.tank.backwards()
+            }
+            if (this.kai_result[2] > 0.5){
+                this.tank.right()
+            }
+            if (this.kai_result[3] > 0.5){
+                this.tank.left()
+            }
+            if (this.kai_result[4] > 0.5){
+                this.tank.shoot();
+            }
+        }
+        this.tank.update()
+    }
+};
+
 class Player{
     constructor(game){
         this.game=game;
-        this.tank=new Tank(this.game,this.game.terrain,physicsSettings);
+        this.tank=new Tank(this.game,this.game.terrain,physicsSettings,playerStartPosition);
         this.turretPivot = this.tank.turretPivot
         this.gunPivot = this.tank.gunPivot
         
@@ -262,8 +323,10 @@ class Player{
 };
 
 class Tank{
-    constructor(game,terrain,settings){
+    constructor(game,terrain,settings,startPosition){
         this.game=game
+        this.dead = false;
+        this.explosion = null;
 
         // Projectiles
         this.armed=false;
@@ -279,7 +342,6 @@ class Tank{
         this.objW=settings[5]
         this.objH=settings[6]
         this.obj= new THREE.Object3D();
-        this.obj.position.set(0,700,0)
         this.game.scene.add(this.obj)
         // Track Sound
         this.trackSound = new THREE.PositionalAudio(this.game.camera.listener);
@@ -352,21 +414,27 @@ class Tank{
         this.acceleration=[0,0,0]
         this.velocity=new THREE.Vector3(0,0,0)
         this.totalVelocity = 0;
+        this.prevVelocity = 0;
 
         this.torqueY=0
         this.angAccY=0
         this.inertiaY = this.mass * ( (this.objW*this.objW + this.objL*this.objL) / 12 );
+        this.prevAngVel = 0;
         this.angVelY=0
         this.rotation=0
 
-        this.obj.position.x=0
+        this.obj.position.x=startPosition[0]
         this.obj.position.y=0
-        this.obj.position.z=0
+        this.obj.position.z=startPosition[1]
         this.yawQuat = new THREE.Quaternion();
         this.tiltQuat = new THREE.Quaternion();
 
         this.updateState()
     } 
+    die() {
+        this.dead = true;
+        this.updateState();
+    }
     loadModels(){
         this.game.loader.load("/assets/chassis.glb", (gltf) => {
             this.obj.add(gltf.scene);
@@ -379,9 +447,11 @@ class Tank{
         });
     }
     update(){
-        this.updatePosition()
-        this.updateProjection()
-        this.handleProjectiles()
+        if (!this.dead){
+            this.updatePosition()
+            this.updateProjection()
+            this.handleProjectiles()
+        }
     }
     handleProjectiles(){
         if (!this.armed){
@@ -411,15 +481,23 @@ class Tank{
         }
     }
     updateState(){
-        this.torqueY = 0
-        this.forces=[0,0,0]
-        if ((this.velocity.x==0)&&(this.velocity.z==0)&&(this.angVelY==0)){
-            this.cFriction=this.cosf;
+        if (this.dead) {
+            if (this.explosion == null) {
+                this.explosion = new Explosion(this.game, this.obj.position, true);
+            } else {
+                this.explosion.update();
+            }
         } else {
-            this.cFriction=this.codf;
+            this.torqueY = 0
+            this.forces=[0,0,0]
+            if ((this.velocity.x==0)&&(this.velocity.z==0)&&(this.angVelY==0)){
+                this.cFriction=this.cosf;
+            } else {
+                this.cFriction=this.codf;
+            }
+            this.forward = new THREE.Vector3(0, 0, tractionForceRatio*this.mass*this.g);
+            this.forward.applyEuler(new THREE.Euler(0,this.rotation,0));
         }
-        this.forward = new THREE.Vector3(0, 0, tractionForceRatio*this.mass*this.g);
-        this.forward.applyEuler(new THREE.Euler(0,this.rotation,0));
     }
     forwards(){
         this.forces[0]+=this.forward.x
@@ -436,6 +514,8 @@ class Tank{
         this.torqueY += tractionForceRatio*this.mass*this.g*(this.objW/2);
     }
     updatePosition(){
+        //Linear
+        this.prevVelocity = this.totalVelocity
         this.acceleration=[this.forces[0]/this.mass,0,this.forces[2]/this.mass]
         this.velocity.x += this.acceleration[0]*this.game.time
         this.velocity.z += this.acceleration[2]*this.game.time
@@ -449,31 +529,12 @@ class Tank{
         if (this.velocity.length()>maxVelocity){
             this.velocity.setLength(maxVelocity)
         }
-        const prevVelocity = this.totalVelocity
-        this.totalVelocity = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+        this.totalVelocity = this.velocity.length();
         this.obj.position.x+=this.velocity.x*this.game.time*this.pixelPerMeter
         this.obj.position.z+=this.velocity.z*this.game.time*this.pixelPerMeter
-        //track sounds
-        if ((!this.trackSound.isPlaying) && (this.totalVelocity > trackSoundLimit + 0.3)) {
-            this.trackFade = false;
-            this.trackSound.play();
-            this.decSound.stop()
-        }
-        if ((this.trackSound.isPlaying) && (this.totalVelocity <= trackSoundLimit - 0.3) && (!this.trackFade)) {
-            this.trackFade = true;
-            fadeOut(this.trackSound,0.7);
-            this.decSound.play();
-        }
-        if ((!this.accSound.isPlaying) && (this.totalVelocity > prevVelocity)) {
-            this.accFade = false;
-            this.accSound.play();
-        }
-        if ((this.accSound.isPlaying) && (this.totalVelocity <= prevVelocity) && (!this.accFade)) {
-            this.accFade = true;
-            fadeOut(this.accSound,0.05);
-        }
 
-
+        //Angular
+        this.prevAngVel = this.angVelY
         this.angAccY=this.torqueY/this.inertiaY
         this.angVelY+=this.angAccY*this.game.time
         //Friction
@@ -482,11 +543,35 @@ class Tank{
         } else {
             this.angVelY=0
         }
-
+        
         this.angVelY = Math.max(-maxAngVel, Math.min(maxAngVel,this.angVelY))
-
+        
         this.rotation+=this.angVelY*this.game.time
         this.yawQuat.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.angVelY * this.game.time));
+        this.handleTrackSounds();
+    }
+    handleTrackSounds(){
+        //track sounds
+        if ((!this.trackSound.isPlaying) && ((this.totalVelocity > trackSoundLimit + 0.3) || (Math.abs(this.angVelY) > angVelTrackSoundLimit + 0.03))) {
+            this.trackFade = false;
+            this.trackSound.play();
+            this.decSound.stop()
+        }
+        if ((this.trackSound.isPlaying) && (!this.trackFade) && (this.totalVelocity <= trackSoundLimit - 0.3) && (Math.abs(this.angVelY) <= angVelTrackSoundLimit - 0.03)) {
+            this.trackFade = true;
+            fadeOut(this.trackSound,0.7);
+            this.decSound.play();
+        }
+        if ((!this.accSound.isPlaying) && (((this.totalVelocity > this.prevVelocity) && (this.totalVelocity < maxVelocity - 0.3)) || ((Math.abs(this.angVelY) > Math.abs(this.prevAngVel)) && (Math.abs(this.angVelY) < maxAngVel - 0.05)))) {
+            this.accFade = false;
+            this.accSound.play();
+        }
+        if ((this.accSound.isPlaying) && (!this.accFade) && (this.totalVelocity <= this.prevVelocity) && (Math.abs(this.angVelY) <= Math.abs(this.prevAngVel))) {
+            this.accFade = true;
+            fadeOut(this.accSound,0.05);
+        }
+        console.log(this.trackSound.isPlaying);
+        console.log(Math.abs(this.angVelY))
     }
     updateProjection(){
         this.finalQuat = this.yawQuat.clone().multiply(this.tiltQuat);
@@ -652,6 +737,9 @@ class Game{
             });
         // Player
         this.player=new Player(this);
+        // Enemy
+        this.enemy = new Enemy(this,this.player.tank);
+        this.tankList = [this.player.tank, this.enemy.tank];
     }
     resize(newWidth, newHeight){
         this.width= newWidth;
@@ -670,6 +758,7 @@ class Game{
         this.last_time=this.current_time
         
         this.player.update();
+        this.enemy.update();
         this.camera.update();
     }
     render(){
