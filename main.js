@@ -637,20 +637,21 @@ class Camera{
             this.yaw = 0;
             this.pitch = 0;
             window.addEventListener("mousemove", e => {
-                this.yaw   -= e.movementX * 0.002;
-                this.pitch -= e.movementY * 0.002;
-                if ((this.game.keySCam)||(this.game.keySKCam)) {
-                    this.pitch = Math.max(-0.13, Math.min(0.45, this.pitch));
-                } else {
-                    this.pitch = Math.max(-0.1, Math.min(0.05, this.pitch));
+                if (!this.game.player.tank.dead) {
+                    this.yaw   -= e.movementX * 0.002;
+                    this.pitch -= e.movementY * 0.002;
+                    if ((this.game.keySCam)||(this.game.keySKCam)) {
+                        this.pitch = Math.max(-0.13, Math.min(0.45, this.pitch));
+                    } else {
+                        this.pitch = Math.max(-0.1, Math.min(0.05, this.pitch));
+                    }
                 }
-                
             });
             this.minZoomScale = 0.7;
             this.maxZoomScale = 1.5;
             this.zoomSpeed = 0.001;
             window.addEventListener("wheel", e => {
-                if ((this.game.keySCam==false)&&(this.game.keySKCam==false)){
+                if ((!this.game.player.tank.dead)&&(!this.game.keySCam)&&(!this.game.keySKCam)){
                     this.game.player.cameraArm.position.x += e.deltaY * this.zoomSpeed * this.game.player.cameraXi;
                     this.game.player.cameraArm.position.x = Math.max(
                         this.minZoomScale * this.game.player.cameraXi,
