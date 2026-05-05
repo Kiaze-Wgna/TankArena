@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { Explosion } from "./explosion.js";
+import { KAI } from "./kai.js";
 import { GLTFLoader } from "jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
