@@ -25,7 +25,9 @@ const maxAngVel=0.7
 const angVelTrackSoundLimit = 0.47
 const playerStartPosition = [0,0];
 const enemyspawnrange = 50;
-const tankHitboxRadius = chassisBoxLength;
+const tankHitboxRadius = 3.7 * pixelPerMeter;
+const chunkSize = 30000;
+const chunkSpawnScale = 0.15;
 
 function randnum(lowerLimit,upperLimit) {
     return lowerLimit + (Math.random() * (upperLimit-lowerLimit));
@@ -122,25 +124,52 @@ class InputHandler {
 class Terrain{
     constructor(game){
         this.game=game
-        this.geometry = new THREE.PlaneGeometry(50000, 50000, 500, 500);
-        this.geometry.rotateX(-Math.PI / 2);
-        this.pos = this.geometry.attributes.position;
-        for (let i = 0; i < this.pos.count; i++) {
-            this.x = this.pos.getX(i);
-            this.z = this.pos.getZ(i);
-            this.pos.setY(i, this.heightAt(this.x, this.z));
+        this.terrainTiles = [new TerrainTiles(this, 0, 0)];
+    }
+    renderChunk() {
+        const pPosX = this.game.player.tank.obj.position.x;
+        const pPosZ = this.game.player.tank.obj.position.z;
+        const curChunkX = Math.round(pPosX / chunkSize);
+        const curChunkZ = Math.round(pPosZ / chunkSize);
+        let changeX = 0;
+        let changeZ = 0;
+        if (((curChunkX + chunkSpawnScale) * chunkSize) < pPosX) {
+            changeX = 1;
         }
-        this.pos.needsUpdate = true;
-        this.geometry.computeVertexNormals();
-        
-        this.mat = new THREE.MeshStandardMaterial({
-            color: 0x6b8e23,
-            roughness: 1.0,
-            metalness: 0.0,
-        });
-        this.terrain = new THREE.Mesh(this.geometry, this.mat);
-        this.terrain.receiveShadow = true;
-        this.game.scene.add(this.terrain);
+        if (pPosX < ((curChunkX - chunkSpawnScale) * chunkSize)) {
+            changeX = -1;
+        }
+        if (((curChunkZ + chunkSpawnScale) * chunkSize) < pPosZ) {
+            changeZ = 1;
+        }
+        if (pPosZ < ((curChunkZ - chunkSpawnScale) * chunkSize)) {
+            changeZ = -1;
+        }
+        console.log(changeX)
+        console.log(changeZ)
+        let spawn01 = true;
+        let spawn10 = true;
+        let spawn11 = true;
+        for (let tile of this.terrainTiles) {
+            if ((tile.chunkX == curChunkX) && (tile.chunkZ == (curChunkZ + changeZ))) {
+                spawn01 = false;
+            }
+            if ((tile.chunkX == (curChunkX + changeX)) && (tile.chunkZ == curChunkZ)) {
+                spawn10 = false;
+            }
+            if ((tile.chunkX == (curChunkX + changeX)) && (tile.chunkZ == (curChunkZ + changeZ))) {
+                spawn11 = false;
+            }
+        }
+        if (spawn01) {
+            this.terrainTiles.push(new TerrainTiles(this, curChunkX, curChunkZ + changeZ));
+        }
+        if (spawn10) {
+            this.terrainTiles.push(new TerrainTiles(this, curChunkX + changeX, curChunkZ));
+        }
+        if (spawn11) {
+            this.terrainTiles.push(new TerrainTiles(this, curChunkX + changeX, curChunkZ + changeZ));
+        }
     }
     heightAt(x, z) {
         let y = 0;
@@ -160,6 +189,37 @@ class Terrain{
         }
     
         return y;
+    }
+}
+
+class TerrainTiles {
+    constructor(terrain,chunkX,chunkZ) {
+        this.terrain = terrain;
+        this.chunkX = chunkX;
+        this.chunkZ = chunkZ;
+        this.centerX = chunkX * chunkSize;
+        this.centerZ = chunkZ * chunkSize;
+
+        this.geometry = new THREE.PlaneGeometry(chunkSize, chunkSize, chunkSize/100, chunkSize/100);
+        this.geometry.rotateX(-Math.PI / 2);
+        this.pos = this.geometry.attributes.position;
+        for (let i = 0; i < this.pos.count; i++) {
+            this.x = this.pos.getX(i) + this.centerX;
+            this.z = this.pos.getZ(i) + this.centerZ;
+            this.pos.setY(i, this.terrain.heightAt(this.x, this.z));
+        }
+        this.pos.needsUpdate = true;
+        this.geometry.computeVertexNormals();
+        
+        this.mat = new THREE.MeshStandardMaterial({
+            color: 0x6b8e23,
+            roughness: 1.0,
+            metalness: 0.0,
+        });
+        this.tile = new THREE.Mesh(this.geometry, this.mat);
+        this.tile.position.set(this.centerX, 0, this.centerZ);
+        this.tile.receiveShadow = true;
+        this.terrain.game.scene.add(this.tile);
     }
 }
 
@@ -792,6 +852,7 @@ class Game{
         this.player.update();
         this.enemy.update();
         this.camera.update();
+        this.terrain.renderChunk();
     }
     render(){
         this.renderer.render(this.scene, this.camera.camera);
