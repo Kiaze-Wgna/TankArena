@@ -122,7 +122,7 @@ class InputHandler {
 class Terrain{
     constructor(game){
         this.game=game
-        this.geometry = new THREE.PlaneGeometry(20000, 20000,200,200);
+        this.geometry = new THREE.PlaneGeometry(50000, 50000, 500, 500);
         this.geometry.rotateX(-Math.PI / 2);
         this.pos = this.geometry.attributes.position;
         for (let i = 0; i < this.pos.count; i++) {
@@ -133,10 +133,11 @@ class Terrain{
         this.pos.needsUpdate = true;
         this.geometry.computeVertexNormals();
         
-        this.mat= new THREE.MeshStandardMaterial({
-            color: 0x7CFC00,
+        this.mat = new THREE.MeshStandardMaterial({
+            color: 0x6b8e23,
+            roughness: 1.0,
+            metalness: 0.0,
         });
-        this.mat.wireframe = true;
         this.terrain = new THREE.Mesh(this.geometry, this.mat);
         this.terrain.receiveShadow = true;
         this.game.scene.add(this.terrain);
@@ -368,16 +369,6 @@ class Tank{
             this.decSound.setRefDistance(2 * this.pixelPerMeter);   // distance where volume is “normal”
             this.decSound.setVolume(1.0);
         });
-        // Collision
-        this.collisionBox= new THREE.BoxGeometry(this.chassisW,this.chassisH,this.chassisL)
-        this.collisionMat= new THREE.MeshStandardMaterial({
-            color: 0xcffffff,
-            flatShading:true
-        });
-        this.collision= new THREE.Mesh(this.collisionBox,this.collisionMat);
-        this.collision.position.y=chassisBoxHeight/2
-        this.collision.position.z=-6
-        this.obj.add(this.collision)
         // Turret Pivot
         this.turretPivot= new THREE.Object3D();
         this.turretPivot.position.set(0, 210, 39)
@@ -437,12 +428,39 @@ class Tank{
     }
     loadModels(){
         this.game.loader.load("/assets/chassis.glb", (gltf) => {
+            gltf.scene.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        child.material.needsUpdate = true;
+                    }
+                }
+            });
             this.obj.add(gltf.scene);
         });
         this.game.loader.load("/assets/turret.glb", (gltf) => {
+            gltf.scene.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        child.material.needsUpdate = true;
+                    }
+                }
+            });
             this.turret.add(gltf.scene);
         });
         this.game.loader.load("/assets/gun.glb", (gltf) => {
+            gltf.scene.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        child.material.needsUpdate = true;
+                    }
+                }
+            });
             this.gun.add(gltf.scene);
         });
     }
@@ -570,8 +588,6 @@ class Tank{
             this.accFade = true;
             fadeOut(this.accSound,0.05);
         }
-        console.log(this.trackSound.isPlaying);
-        console.log(Math.abs(this.angVelY))
     }
     updateProjection(){
         this.finalQuat = this.yawQuat.clone().multiply(this.tiltQuat);
@@ -699,12 +715,27 @@ class Game{
         this.width= window.innerWidth;
         this.height= window.innerHeight;
         this.renderer = new THREE.WebGLRenderer({antialias:true});
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.setSize(this.width,this.height);
         document.body.appendChild(this.renderer.domElement);
         // Scene
         this.scene = new THREE.Scene();
-        this.light = new THREE.HemisphereLight(0xffffff,0x111111,1.2);
-        this.scene.add(this.light);
+        this.sun = new THREE.DirectionalLight(0xffffff, 1);
+        this.sun.position.set(500 * this.pixelPerMeter, 1000 * this.pixelPerMeter, 500 * this.pixelPerMeter);
+
+        this.sun.castShadow = true;
+
+        // Shadow quality tuning
+        this.sun.shadow.mapSize.width = 2048;
+        this.sun.shadow.mapSize.height = 2048;
+
+        this.sun.shadow.camera.left = -2000;
+        this.sun.shadow.camera.right = 2000;
+        this.sun.shadow.camera.top = 2000;
+        this.sun.shadow.camera.bottom = -2000;
+
+        this.scene.add(this.sun);
         // time
         this.last_time=performance.now();
         this.current_time=performance.now();
