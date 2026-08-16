@@ -6,7 +6,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=true;
+const locked=false;
 const tankWidth=3.7
 const chassisBoxLength=690
 const chassisBoxWidth=463
@@ -29,6 +29,7 @@ const enemyspawnrange = 50;
 const tankHitboxRadius = 3.7 * pixelPerMeter;
 const chunkSize = 30000;
 const chunkSpawnScale = 0.15;
+const turretRotationSpeed = 0.015;
 
 function randnum(lowerLimit,upperLimit) {
     return lowerLimit + (Math.random() * (upperLimit-lowerLimit));
@@ -146,8 +147,6 @@ class Terrain{
         if (pPosZ < ((curChunkZ - chunkSpawnScale) * chunkSize)) {
             changeZ = -1;
         }
-        console.log(changeX)
-        console.log(changeZ)
         let spawn01 = true;
         let spawn10 = true;
         let spawn11 = true;
@@ -292,35 +291,76 @@ class Projectile{
 }
 
 class Enemy{
-    constructor(game,enemyTank){
+    constructor(game,target){
         this.game=game;
-        this.enemyTank=enemyTank;
-        const startPosition = [randnum(this.enemyTank.obj.position.x - (enemyspawnrange * this.game.pixelPerMeter),
-                                        this.enemyTank.obj.position.x + (enemyspawnrange * this.game.pixelPerMeter)),
-                                randnum(this.enemyTank.obj.position.z - (enemyspawnrange * this.game.pixelPerMeter),
-                                        this.enemyTank.obj.position.z + (enemyspawnrange * this.game.pixelPerMeter))]
+        this.target=target;
+        const startPosition = [randnum(this.target.obj.position.x - (enemyspawnrange * this.game.pixelPerMeter),
+                                        this.target.obj.position.x + (enemyspawnrange * this.game.pixelPerMeter)),
+                                randnum(this.target.obj.position.z - (enemyspawnrange * this.game.pixelPerMeter),
+                                        this.target.obj.position.z + (enemyspawnrange * this.game.pixelPerMeter))]
         this.tank=new Tank(this.game,this.game.terrain,physicsSettings,startPosition);
-        this.kai_input = [0,0,0,0,0]
-        this.kai = null;
-        this.kai_result = [0,0,0,0,0];
+        this.kai_input = this.getKAIInputs();
+        this.kai = new KAI()
+    }
+    getKAIInputs(){
+        // Direction vectors of the tank
+        const forward = new THREE.Vector3(0, 0, 1);
+        const right = new THREE.Vector3(1, 0, 0);
+
+        forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.tank.rotation);
+        right.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.tank.rotation);
+
+        // Target position relative to tank
+        const targetRelative = new THREE.Vector3()
+            .subVectors(this.target.obj.position, this.tank.obj.position);
+
+        // Convert target position from world space to tank-local space
+        const targetX = targetRelative.dot(right);
+        const targetZ = targetRelative.dot(forward);
+
+        // Convert tank velocity from world space to tank-local space
+        const forwardVelocity = this.tank.velocity.dot(forward);
+        const sidewaysVelocity = this.tank.velocity.dot(right);
+
+        // Turret angle relative to tank between -PI and PI
+        const turretRelativeAngle = Math.atan2(
+            Math.sin(this.tank.turretPivot.rotation.y),
+            Math.cos(this.tank.turretPivot.rotation.y)
+        );
+
+        return [
+            targetX / this.game.pixelPerMeter,
+            targetZ / this.game.pixelPerMeter,
+            forwardVelocity,
+            sidewaysVelocity,
+            this.tank.angVelY,
+            turretRelativeAngle
+        ];
     }
     update(){
         this.tank.updateState()
         if (!this.tank.dead) {
-            this.kai_result = [0,0,0,0,0];
-            if (this.kai_result[0] > 0.5){
+            this.kai_input = this.getKAIInputs();
+            this.kai.calculate(this.kai_input)
+            if (this.kai.outputs[0] > 0.5){
                 this.tank.forwards()
             }
-            if (this.kai_result[1] > 0.5){
+            if (this.kai.outputs[1] > 0.5){
                 this.tank.backwards()
             }
-            if (this.kai_result[2] > 0.5){
+            if (this.kai.outputs[2] > 0.5){
                 this.tank.right()
             }
-            if (this.kai_result[3] > 0.5){
+            if (this.kai.outputs[3] > 0.5){
                 this.tank.left()
             }
-            if (this.kai_result[4] > 0.5){
+            if (this.kai.outputs[4] > 0.5){
+                this.tank.turretRight()
+            }
+            if (this.kai.outputs[5] > 0.5){
+                this.tank.turretLeft()
+            }
+            if (this.kai.outputs[6] > 0.5){
                 this.tank.shoot();
             }
         }
@@ -365,6 +405,7 @@ class Player{
             }
         }
         this.tank.updateState()
+        console.log(this.turretPivot.rotation.y)
         if (this.game.keyShoot){
             this.tank.shoot();
         }
@@ -592,6 +633,12 @@ class Tank{
     left(){
         this.torqueY += tractionForceRatio*this.mass*this.g*(this.objW/2);
     }
+    turretRight(){
+        this.turretPivot.rotation.y -= turretRotationSpeed;
+    }
+    turretLeft(){
+        this.turretPivot.rotation.y += turretRotationSpeed;
+    }
     updatePosition(){
         //Linear
         this.prevVelocity = this.totalVelocity
@@ -749,7 +796,7 @@ class Camera{
                 }
             }, { passive: false });
         } else{
-            this.camera.position.set(0,900,-800);
+            this.camera.position.set(0,9000,-8000);
             this.controls = new OrbitControls(this.camera, this.game.renderer.domElement)
         }
         
