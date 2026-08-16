@@ -129,46 +129,50 @@ class Terrain{
         this.terrainTiles = [new TerrainTiles(this, 0, 0)];
     }
     renderChunk() {
-        const pPosX = this.game.player.tank.obj.position.x;
-        const pPosZ = this.game.player.tank.obj.position.z;
-        const curChunkX = Math.round(pPosX / chunkSize);
-        const curChunkZ = Math.round(pPosZ / chunkSize);
-        let changeX = 0;
-        let changeZ = 0;
-        if (((curChunkX + chunkSpawnScale) * chunkSize) < pPosX) {
-            changeX = 1;
-        }
-        if (pPosX < ((curChunkX - chunkSpawnScale) * chunkSize)) {
-            changeX = -1;
-        }
-        if (((curChunkZ + chunkSpawnScale) * chunkSize) < pPosZ) {
-            changeZ = 1;
-        }
-        if (pPosZ < ((curChunkZ - chunkSpawnScale) * chunkSize)) {
-            changeZ = -1;
-        }
-        let spawn01 = true;
-        let spawn10 = true;
-        let spawn11 = true;
-        for (let tile of this.terrainTiles) {
-            if ((tile.chunkX == curChunkX) && (tile.chunkZ == (curChunkZ + changeZ))) {
-                spawn01 = false;
+        for (let tank of this.game.tankList) {
+            if (tank.dead) continue;
+
+            const pPosX = tank.obj.position.x;
+            const pPosZ = tank.obj.position.z;
+            const curChunkX = Math.round(pPosX / chunkSize);
+            const curChunkZ = Math.round(pPosZ / chunkSize);
+            let changeX = 0;
+            let changeZ = 0;
+            if (((curChunkX + chunkSpawnScale) * chunkSize) < pPosX) {
+                changeX = 1;
             }
-            if ((tile.chunkX == (curChunkX + changeX)) && (tile.chunkZ == curChunkZ)) {
-                spawn10 = false;
+            if (pPosX < ((curChunkX - chunkSpawnScale) * chunkSize)) {
+                changeX = -1;
             }
-            if ((tile.chunkX == (curChunkX + changeX)) && (tile.chunkZ == (curChunkZ + changeZ))) {
-                spawn11 = false;
+            if (((curChunkZ + chunkSpawnScale) * chunkSize) < pPosZ) {
+                changeZ = 1;
             }
-        }
-        if (spawn01) {
-            this.terrainTiles.push(new TerrainTiles(this, curChunkX, curChunkZ + changeZ));
-        }
-        if (spawn10) {
-            this.terrainTiles.push(new TerrainTiles(this, curChunkX + changeX, curChunkZ));
-        }
-        if (spawn11) {
-            this.terrainTiles.push(new TerrainTiles(this, curChunkX + changeX, curChunkZ + changeZ));
+            if (pPosZ < ((curChunkZ - chunkSpawnScale) * chunkSize)) {
+                changeZ = -1;
+            }
+            let spawn01 = true;
+            let spawn10 = true;
+            let spawn11 = true;
+            for (let tile of this.terrainTiles) {
+                if ((tile.chunkX == curChunkX) && (tile.chunkZ == (curChunkZ + changeZ))) {
+                    spawn01 = false;
+                }
+                if ((tile.chunkX == (curChunkX + changeX)) && (tile.chunkZ == curChunkZ)) {
+                    spawn10 = false;
+                }
+                if ((tile.chunkX == (curChunkX + changeX)) && (tile.chunkZ == (curChunkZ + changeZ))) {
+                    spawn11 = false;
+                }
+            }
+            if (spawn01) {
+                this.terrainTiles.push(new TerrainTiles(this, curChunkX, curChunkZ + changeZ));
+            }
+            if (spawn10) {
+                this.terrainTiles.push(new TerrainTiles(this, curChunkX + changeX, curChunkZ));
+            }
+            if (spawn11) {
+                this.terrainTiles.push(new TerrainTiles(this, curChunkX + changeX, curChunkZ + changeZ));
+            }
         }
     }
     heightAt(x, z) {
