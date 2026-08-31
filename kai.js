@@ -13,7 +13,8 @@ const TANH = 3;
 //                  Forward velocity, 
 //                  Sideways velocity,
 //                  Tank angular velocity,
-//                  Turret relative angle]
+//                  Turret relative angle,
+//                  Reload progress]
 // KAI Outputs(7): [Forward
 //                  Backward,
 //                  Chassis Right, 
@@ -22,7 +23,7 @@ const TANH = 3;
 //                  Turret Left,
 //                  Turret Shoot]
 
-const inN = 6;
+const inN = 7;
 const layers = [[LEAKY_RELU, 8], [LEAKY_RELU, 8], [SIGMOID, 7]];
 const weights = null;
 const trainingDataSet = [];

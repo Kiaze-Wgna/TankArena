@@ -253,6 +253,7 @@ class Projectile{
         this.bullet.position.z+=forward.z * 0.39 * this.tank.pixelPerMeter; 
         this.explosion = null;
         this.dead = false;
+        this.kill = false;
     }
     update() {
         if (this.explosion == null) {
@@ -265,6 +266,7 @@ class Projectile{
                     tank.die();
                     this._dispose();
                     this.dead = true;
+                    this.kill = true;
                     return;
                 }
             }
@@ -295,17 +297,94 @@ class Projectile{
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//                                      Training Materials                                      //
+//////////////////////////////////////////////////////////////////////////////////////////////////
 class KAITrainer{
     constructor(game){
         this.game = game;
         this.target = new Block(this.game, this.game.terrain, physicsSettings, [0,1000])
         this.kaiTank = new Enemy(this.game, this.target, false);
+        this.experiences = [];
+        this.currentFrame = 0;
     }
     update(){
+        if (this.currentFrame == 99999999){
+            this.currentFrame = 0;
+            this.kaiTank.kai = this.getNewModel()
+            this.experiences = [];
+        }
+        const projectileCount = this.kaiTank.tank.projectiles.length;
         this.target.update();
         this.kaiTank.update();
+        let createdProjectile = null;
+        if (this.kaiTank.tank.projectiles.length > projectileCount){
+            createdProjectile = this.kaiTank.tank.projectiles[this.kaiTank.tank.projectiles.length - 1];
+        }
+        this.experiences.push(
+            new KAIActionExperience(
+                this.currentFrame,
+                this.target,
+                this.kaiTank,
+                createdProjectile,
+                [...this.kaiTank.kai_input],
+                [...this.kaiTank.kai.outputs],
+            )
+        )
+        for (const experience of this.experiences){
+            experience.update();
+        }
+        this.currentFrame++;
+    }
+    getNewModel(){
+        // Current placeholder for RL Algorithm
+        return new KAI()
     }
 }
+
+class KAIActionExperience{
+    constructor(currentFrame, target, kaiTank, projectile, state, action){
+        this.currentFrame = currentFrame;
+        this.projectile = projectile;
+        this.state = state;
+        this.action = action;
+        this.results = this.getResults(target, kaiTank)
+    }
+    update(){
+        if ((this.projectile != null) && (this.projectile.dead)) {
+            if (this.projectile.kill) {
+                this.results[1] = 2;
+            } else {
+                this.results[1] = 1;
+            }
+            this.projectile = null;
+        }
+    }
+    getResults(target, kaiTank){
+        // [Aim Error, Projectile Result]
+        // Projectile Result: null: does not exist 0: still flying 1: didnt hit, 2: hit target\
+        if (this.projectile == null){
+            return [this.getAimError(target, kaiTank), null]
+        }
+        return [this.getAimError(target, kaiTank), 0]// and more
+    }
+    getAimError(target, kaiTank) {
+        const dx = target.obj.position.x - kaiTank.tank.obj.position.x;
+        const dz = target.obj.position.z - kaiTank.tank.obj.position.z;
+
+        const targetAngle = Math.atan2(dx, dz);
+        const turretAngle = kaiTank.tank.turretPivot.rotation.y + kaiTank.tank.rotation.y;
+
+        let error = targetAngle - turretAngle;
+
+        error = Math.atan2(Math.sin(error), Math.cos(error));
+
+        return Math.abs(error);
+    }
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//                                   End of Training Materials                                   //
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 class Enemy{
     constructor(game,target,showHitbox){
@@ -345,13 +424,20 @@ class Enemy{
             Math.cos(this.tank.turretPivot.rotation.y)
         );
 
+        if (this.tank.armed){
+            var reloadProgress = 1
+        } else {
+            var reloadProgress = (projectileReloadTime - this.tank.reload) / projectileReloadTime
+        }
+
         return [
             targetX / this.game.pixelPerMeter,
             targetZ / this.game.pixelPerMeter,
             forwardVelocity,
             sidewaysVelocity,
             this.tank.angVelY,
-            turretRelativeAngle
+            turretRelativeAngle,
+            reloadProgress
         ];
     }
     update(){
