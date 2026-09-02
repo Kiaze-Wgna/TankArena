@@ -8,8 +8,10 @@ const SIGMOID = 2;
 const TANH = 3;
 
 // KAI Setup Constants
-// KAI Inputs(6):  [Target relative X,
+// KAI Inputs(9):  [Target relative X,
 //                  Target relative Z,
+//                  Target Forward velocity, 
+//                  Target Sideways velocity,
 //                  Forward velocity, 
 //                  Sideways velocity,
 //                  Tank angular velocity,
@@ -23,7 +25,7 @@ const TANH = 3;
 //                  Turret Left,
 //                  Turret Shoot]
 
-const inN = 7;
+const inN = 9;
 const layers = [[LEAKY_RELU, 8], [LEAKY_RELU, 8], [SIGMOID, 7]];
 const weights = null;
 const trainingDataSet = [];

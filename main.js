@@ -6,7 +6,7 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked=false;
+const locked = false;
 const kaiTesting = true;
 const tankWidth=3.7
 const chassisBoxLength=690
@@ -31,6 +31,8 @@ const tankHitboxRadius = 3.7 * pixelPerMeter;
 const chunkSize = 30000;
 const chunkSpawnScale = 0.15;
 const turretRotationSpeed = 0.015;
+const tankStartingHealth = 100;
+const projectileDamage = 25;
 
 function randnum(lowerLimit,upperLimit) {
     return lowerLimit + (Math.random() * (upperLimit-lowerLimit));
@@ -252,42 +254,53 @@ class Projectile{
         this.bullet.position.y+=forward.y * 0.39 * this.tank.pixelPerMeter; 
         this.bullet.position.z+=forward.z * 0.39 * this.tank.pixelPerMeter; 
         this.explosion = null;
+        this.flying = true;
         this.dead = false;
-        this.kill = false;
+        this.hit = false;
     }
     update() {
-        if (this.explosion == null) {
+        if (this.flying) {
             this.deltapos += 10 * this.tank.game.time * this.tank.pixelPerMeter; 
             this.bullet.position.x+=this.speedX * this.tank.game.time * this.tank.pixelPerMeter; 
             this.bullet.position.y+=this.speedY * this.tank.game.time * this.tank.pixelPerMeter; 
             this.bullet.position.z+=this.speedZ * this.tank.game.time * this.tank.pixelPerMeter; 
             for (let tank of this.tank.game.tankList) {
                 if (getDistance(tank.obj.position, this.bullet.position) < tankHitboxRadius) {
-                    tank.die();
+                    if (tank.hit()){
+                        this.dead = true;
+                    } else {
+                        const explosionPosition = this.bullet.position.clone();
+
+                        tank.obj.worldToLocal(explosionPosition);
+
+                        this.explosion = new Explosion(this.tank.game, tank.obj, explosionPosition, false);
+                    }
                     this._dispose();
-                    this.dead = true;
-                    this.kill = true;
+                    this.hit = true;
+                    this.flying = false;
                     return;
                 }
             }
             if (this.tank.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
-                this.explosion = new Explosion(this.tank.game, this.bullet.position, false);
+                this.explosion = new Explosion(this.tank.game, this.tank.game.scene, this.bullet.position, false);
                 this._dispose();
+                this.flying = false;
                 return;
             }
             if (this.deltapos > projectileRenderDistance * this.tank.pixelPerMeter) {
                 this._dispose();
                 this.dead = true;
+                this.flying = false;
                 return;
             }
             
-        } else {
+        }
+        if (this.explosion != null) {
             this.explosion.update();
             if (this.explosion.dead) {
                 this.dead = true;
             }
         }
-
     }
     _dispose() {
         this.tank.game.scene.remove(this.bullet);
@@ -303,8 +316,10 @@ class Projectile{
 class KAITrainer{
     constructor(game){
         this.game = game;
-        this.target = new Block(this.game, this.game.terrain, physicsSettings, [0,1000])
-        this.kaiTank = new Enemy(this.game, this.target, false);
+        this.target = new ScriptedEnemy(this.game, false);
+        this.kaiTank = new Enemy(this.game, false);
+        this.target.setTarget(this.kaiTank.tank);
+        this.kaiTank.setTarget(this.target.tank);
         this.experiences = [];
         this.currentFrame = 0;
     }
@@ -351,8 +366,8 @@ class KAIActionExperience{
         this.results = this.getResults(target, kaiTank)
     }
     update(){
-        if ((this.projectile != null) && (this.projectile.dead)) {
-            if (this.projectile.kill) {
+        if ((this.projectile != null) && (!this.projectile.flying)) {
+            if (this.projectile.hit) {
                 this.results[1] = 2;
             } else {
                 this.results[1] = 1;
@@ -369,8 +384,8 @@ class KAIActionExperience{
         return [this.getAimError(target, kaiTank), 0]// and more
     }
     getAimError(target, kaiTank) {
-        const dx = target.obj.position.x - kaiTank.tank.obj.position.x;
-        const dz = target.obj.position.z - kaiTank.tank.obj.position.z;
+        const dx = target.tank.obj.position.x - kaiTank.tank.obj.position.x;
+        const dz = target.tank.obj.position.z - kaiTank.tank.obj.position.z;
 
         const targetAngle = Math.atan2(dx, dz);
         const turretAngle = kaiTank.tank.turretPivot.rotation.y + kaiTank.tank.rotation.y;
@@ -386,17 +401,63 @@ class KAIActionExperience{
 //                                   End of Training Materials                                   //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-class Enemy{
-    constructor(game,target,showHitbox){
+class ScriptedEnemy{
+    constructor(game,showHitbox){
         this.game=game;
+        this.tank=new Tank(this.game,this.game.terrain,physicsSettings,playerStartPosition,showHitbox);
+        this.controls = [false,false,false,false,false,false,false];
+    }
+    setTarget(target){
+        this.target=target;
+    }
+    getScriptedControls(){
+        // Scripted Controls to be added
+        return [false,false,false,false,false,false,false];
+    }
+    update(){
+        this.tank.updateState()
+        if (!this.tank.dead) {
+            this.controls = this.getScriptedControls();
+            if (this.controls[0]){
+                this.tank.forwards()
+            }
+            if (this.controls[1]){
+                this.tank.backwards()
+            }
+            if (this.controls[2]){
+                this.tank.right()
+            }
+            if (this.controls[3]){
+                this.tank.left()
+            }
+            if (this.controls[4]){
+                this.tank.turretRight()
+            }
+            if (this.controls[5]){
+                this.tank.turretLeft()
+            }
+            if (this.controls[6]){
+                this.tank.shoot();
+            }
+        }
+        this.tank.update()
+    }
+};
+
+class Enemy{
+    constructor(game,showHitbox){
+        this.game=game;
+        this.showHitbox = showHitbox;
+        this.kai_input = [0,0,0,0,0,0,0];
+        this.kai = new KAI()
+    }
+    setTarget(target){
         this.target=target;
         const startPosition = [randnum(this.target.obj.position.x - (enemyspawnrange * this.game.pixelPerMeter),
                                         this.target.obj.position.x + (enemyspawnrange * this.game.pixelPerMeter)),
                                 randnum(this.target.obj.position.z - (enemyspawnrange * this.game.pixelPerMeter),
                                         this.target.obj.position.z + (enemyspawnrange * this.game.pixelPerMeter))]
-        this.tank=new Tank(this.game,this.game.terrain,physicsSettings,startPosition,showHitbox);
-        this.kai_input = this.getKAIInputs();
-        this.kai = new KAI()
+        this.tank=new Tank(this.game,this.game.terrain,physicsSettings,startPosition,this.showHitbox);
     }
     getKAIInputs(){
         // Direction vectors of the tank
@@ -413,6 +474,10 @@ class Enemy{
         // Convert target position from world space to tank-local space
         const targetX = targetRelative.dot(right);
         const targetZ = targetRelative.dot(forward);
+
+        // Convert target tank velocity from world space to tank-local space
+        const targetForwardVelocity = this.target.velocity.dot(forward);
+        const targetSidewaysVelocity = this.target.velocity.dot(right);
 
         // Convert tank velocity from world space to tank-local space
         const forwardVelocity = this.tank.velocity.dot(forward);
@@ -433,6 +498,8 @@ class Enemy{
         return [
             targetX / this.game.pixelPerMeter,
             targetZ / this.game.pixelPerMeter,
+            targetForwardVelocity,
+            targetSidewaysVelocity,
             forwardVelocity,
             sidewaysVelocity,
             this.tank.angVelY,
@@ -530,6 +597,7 @@ class Player{
 class Tank{
     constructor(game,terrain,settings,startPosition,showHitbox){
         this.game=game
+        this.hp = tankStartingHealth;
         this.dead = false;
         this.explosion = null;
 
@@ -643,9 +711,16 @@ class Tank{
 
         this.updateState()
     } 
-    die() {
-        this.dead = true;
-        this.updateState();
+    hit() {
+        if (this.hp <= projectileDamage) {
+            this.hp = 0;
+            this.dead = true;
+            this.updateState();
+            return true;
+        } else {
+            this.hp -= projectileDamage;
+            return false;
+        }
     }
     loadModels(){
         this.game.loader.load("/assets/chassis.glb", (gltf) => {
@@ -722,7 +797,7 @@ class Tank{
     updateState(){
         if (this.dead) {
             if (this.explosion == null) {
-                this.explosion = new Explosion(this.game, this.obj.position, true);
+                this.explosion = new Explosion(this.game, this.game.scene, this.obj.position, true);
             } else {
                 this.explosion.update();
             }
@@ -814,120 +889,6 @@ class Tank{
         if ((this.accSound.isPlaying) && (!this.accFade) && (this.totalVelocity <= this.prevVelocity) && (Math.abs(this.angVelY) <= Math.abs(this.prevAngVel))) {
             this.accFade = true;
             fadeOut(this.accSound,0.05);
-        }
-    }
-    updateProjection(){
-        var hw = this.chassisW / 2;
-        var hl = this.chassisL  / 2;
-
-        this.corners = [
-            new THREE.Vector3( hw, 0,  hl),
-            new THREE.Vector3(-hw, 0,  hl),
-            new THREE.Vector3( hw, 0, -hl),
-            new THREE.Vector3(-hw, 0, -hl),
-        ];
-
-        for (let c of this.corners){
-            c.applyQuaternion(this.finalQuat);
-            c.add(this.obj.position);
-            c.y = this.terrain.heightAt(c.x, c.z);
-        }
-
-        const right = new THREE.Vector3()
-            .subVectors(this.corners[2], this.corners[3]) // BR - BL
-            .normalize();
-
-            const forward = new THREE.Vector3()
-            .subVectors(this.corners[0], this.corners[2]) // FLIP
-            .normalize();
-
-        const up = new THREE.Vector3()
-            .crossVectors(forward, right)
-            .normalize();
-        if (up.y < 0) {
-            right.negate();
-            up.crossVectors(forward, right).normalize();
-        }
-        const rotationMatrix = new THREE.Matrix4().makeBasis(
-            right,
-            up,
-            forward
-        );
-        
-        this.tiltQuat.setFromRotationMatrix(rotationMatrix);
-        const euler = new THREE.Euler().setFromQuaternion(this.tiltQuat, 'YXZ');
-
-        euler.y = 0;
-        this.tiltQuat.setFromEuler(euler);
-        this.finalQuat = this.yawQuat.clone().multiply(this.tiltQuat);
-        this.obj.quaternion.copy(this.finalQuat);
-        this.obj.position.y =
-            (this.corners[0].y + this.corners[1].y + this.corners[2].y + this.corners[3].y) * 0.25;
-    }
-}
-
-class Block{
-    constructor(game,terrain,settings,startPosition){
-        this.game=game
-        this.dead = false;
-        this.explosion = null;
-
-        // Chassis
-        this.mass=settings[0];
-        this.chassisL=settings[1]
-        this.chassisW=settings[2]
-        this.chassisH=settings[3]
-        this.objL=settings[4]
-        this.objW=settings[5]
-        this.objH=settings[6]
-        this.obj = new THREE.Mesh(
-            new THREE.BoxGeometry(
-                this.chassisW,
-                this.chassisH,
-                this.chassisL
-            ),
-            new THREE.MeshStandardMaterial({
-                color: 0x888888
-            })
-        );
-        this.game.scene.add(this.obj)
-
-        this.hitbox = new THREE.Mesh(
-            new THREE.SphereGeometry(tankHitboxRadius, 32, 16),
-            new THREE.MeshBasicMaterial({
-                color: 0xff0000,
-                transparent: true,
-                opacity: 0.25,
-                depthWrite: false
-            })
-        );
-        this.obj.add(this.hitbox);
-
-        this.terrain=terrain
-        this.pixelPerMeter=this.game.pixelPerMeter
-
-        this.obj.position.x=startPosition[0]
-        this.obj.position.y=0
-        this.obj.position.z=startPosition[1]
-        this.yawQuat = new THREE.Quaternion();
-        this.tiltQuat = new THREE.Quaternion();
-        this.finalQuat = this.yawQuat.clone().multiply(this.tiltQuat);
-
-        this.updateProjection()
-        this.update()
-    } 
-    die() {
-        this.dead = true;
-        this.update();
-    }
-    
-    update(){
-        if (this.dead) {
-            if (this.explosion == null) {
-                this.explosion = new Explosion(this.game, this.obj.position, true);
-            } else {
-                this.explosion.update();
-            }
         }
     }
     updateProjection(){
@@ -1116,7 +1077,8 @@ class Game{
             // Player
             this.player=new Player(this);
             // Enemy
-            this.enemy = new Enemy(this,this.player.tank,true);
+            this.enemy = new Enemy(this,true);
+            this.enemy.setTarget(this.player.tank);
         }
         
     }

@@ -1,19 +1,19 @@
 import * as THREE from "three";
 
 export class Explosion {
-  constructor(game, position, continuous) {
+  constructor(game, anchor, position, continuous) {
     this.game = game;
     this.position = position;
     this.pixelPerMeter = this.game.pixelPerMeter;
-    this.scene = game.scene;
+    this.anchor = anchor;
     this.continuous = continuous;
 
     this.time = 0;
     this.duration = 3;
 
     this.group = new THREE.Group();
+    this.anchor.add(this.group);
     this.group.position.copy(this.position);
-    this.scene.add(this.group);
     this.dead = false;
     this.currentFire = true;
     this.oldGroups = [];
@@ -185,7 +185,7 @@ export class Explosion {
 
       this.group = new THREE.Group();
       this.group.position.copy(this.position);
-      this.scene.add(this.group);
+      this.anchor.add(this.group);
   
       this.time = 0;
   
@@ -214,7 +214,7 @@ export class Explosion {
       if (g.smoke) g.smoke.material.uniforms.uTime.value = g.startTime - smokeDelay;
   
       if (g.startTime > this.duration + 1.0) {
-        this.scene.remove(g.group);
+        this.anchor.remove(g.group);
   
         g.group.traverse(obj => {
           if (obj.geometry) obj.geometry.dispose();
@@ -226,7 +226,7 @@ export class Explosion {
     }
 
     if (!this.continuous && this.time > this.duration + 1.0) {
-      this.scene.remove(this.group);
+      this.anchor.remove(this.group);
       this.group.traverse(obj => {
         if (obj.geometry) obj.geometry.dispose();
         if (obj.material) obj.material.dispose();
