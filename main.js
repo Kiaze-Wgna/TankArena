@@ -33,6 +33,7 @@ const chunkSpawnScale = 0.15;
 const turretRotationSpeed = 0.015;
 const tankStartingHealth = 100;
 const projectileDamage = 25;
+const framesPerGeneration = 9999999;
 
 function randnum(lowerLimit,upperLimit) {
     return lowerLimit + (Math.random() * (upperLimit-lowerLimit));
@@ -316,18 +317,21 @@ class Projectile{
 class KAITrainer{
     constructor(game){
         this.game = game;
+        this.initializeTraining(new KAI());
+    }
+    initializeTraining(kai){
         this.target = new ScriptedEnemy(this.game, false);
         this.kaiTank = new Enemy(this.game, false);
         this.target.setTarget(this.kaiTank.tank);
         this.kaiTank.setTarget(this.target.tank);
+        this.kaiTank.kai = kai;
         this.experiences = [];
         this.currentFrame = 0;
+        this.aimError = this.getAimError();
     }
     update(){
-        if (this.currentFrame == 99999999){
-            this.currentFrame = 0;
-            this.kaiTank.kai = this.getNewModel()
-            this.experiences = [];
+        if (this.currentFrame == framesPerGeneration){
+            this.initializeTraining(this.getNewModel());
         }
         const projectileCount = this.kaiTank.tank.projectiles.length;
         this.target.update();
@@ -339,8 +343,7 @@ class KAITrainer{
         this.experiences.push(
             new KAIActionExperience(
                 this.currentFrame,
-                this.target,
-                this.kaiTank,
+                this,
                 createdProjectile,
                 [...this.kaiTank.kai_input],
                 [...this.kaiTank.kai.outputs],
@@ -352,18 +355,33 @@ class KAITrainer{
         this.currentFrame++;
     }
     getNewModel(){
-        // Current placeholder for RL Algorithm
+        for (const experience of this.experiences){
+            experience.updateRewards();
+        }
         return new KAI()
+    }
+    getAimError() {
+        const dx = this.target.tank.obj.position.x - this.kaiTank.tank.obj.position.x;
+        const dz = this.target.tank.obj.position.z - this.kaiTank.tank.obj.position.z;
+
+        const targetAngle = Math.atan2(dx, dz);
+        const turretAngle = this.kaiTank.tank.turretPivot.rotation.y + this.kaiTank.tank.rotation.y;
+
+        let error = targetAngle - turretAngle;
+
+        error = Math.atan2(Math.sin(error), Math.cos(error));
+
+        return Math.abs(error);
     }
 }
 
 class KAIActionExperience{
-    constructor(currentFrame, target, kaiTank, projectile, state, action){
+    constructor(currentFrame, trainer, projectile, state, action){
         this.currentFrame = currentFrame;
         this.projectile = projectile;
         this.state = state;
         this.action = action;
-        this.results = this.getResults(target, kaiTank)
+        this.results = this.getResults(trainer)
     }
     update(){
         if ((this.projectile != null) && (!this.projectile.flying)) {
@@ -375,26 +393,28 @@ class KAIActionExperience{
             this.projectile = null;
         }
     }
-    getResults(target, kaiTank){
-        // [Aim Error, Projectile Result]
+    getResults(trainer){
+        // [Aim Improvements, Projectile Result]
+        // Aim Improvements
+
+        const aimImprovements = trainer.aimError - trainer.getAimError()
+        trainer.aimError = trainer.getAimError()
+
         // Projectile Result: null: does not exist 0: still flying 1: didnt hit, 2: hit target\
         if (this.projectile == null){
-            return [this.getAimError(target, kaiTank), null]
+            return [aimImprovements, null]
         }
-        return [this.getAimError(target, kaiTank), 0]// and more
+        return [aimImprovements, 0]// and more
     }
-    getAimError(target, kaiTank) {
-        const dx = target.tank.obj.position.x - kaiTank.tank.obj.position.x;
-        const dz = target.tank.obj.position.z - kaiTank.tank.obj.position.z;
-
-        const targetAngle = Math.atan2(dx, dz);
-        const turretAngle = kaiTank.tank.turretPivot.rotation.y + kaiTank.tank.rotation.y;
-
-        let error = targetAngle - turretAngle;
-
-        error = Math.atan2(Math.sin(error), Math.cos(error));
-
-        return Math.abs(error);
+    updateRewards(){
+        this.rewards = 0;
+        // Aim Improvements Rewards
+        this.rewards += 0.1 * this.results[0];
+        if (this.results[1] == 1) {
+            this.rewards -= 2;
+        } else if (this.results[1] == 2) {
+            this.rewards += 10;
+        }
     }
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -448,7 +468,7 @@ class Enemy{
     constructor(game,showHitbox){
         this.game=game;
         this.showHitbox = showHitbox;
-        this.kai_input = [0,0,0,0,0,0,0];
+        this.kai_input = [0,0,0,0,0,0,0,0,0];
         this.kai = new KAI()
     }
     setTarget(target){
@@ -515,22 +535,22 @@ class Enemy{
             if (this.kai.outputs[0] > 0.5){
                 this.tank.forwards()
             }
-            if (this.kai.outputs[1] > 0.5){
+            if (this.kai.outputs[0] < -0.5){
                 this.tank.backwards()
             }
-            if (this.kai.outputs[2] > 0.5){
+            if (this.kai.outputs[1] > 0.5){
                 this.tank.right()
             }
-            if (this.kai.outputs[3] > 0.5){
+            if (this.kai.outputs[1] < -0.5){
                 this.tank.left()
             }
-            if (this.kai.outputs[4] > 0.5){
+            if (this.kai.outputs[2] > 0.5){
                 this.tank.turretRight()
             }
-            if (this.kai.outputs[5] > 0.5){
+            if (this.kai.outputs[2] < -0.5){
                 this.tank.turretLeft()
             }
-            if (this.kai.outputs[6] > 0.5){
+            if (this.kai.outputs[3] > 0.5){
                 this.tank.shoot();
             }
         }

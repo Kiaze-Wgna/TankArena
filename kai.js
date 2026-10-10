@@ -17,16 +17,13 @@ const TANH = 3;
 //                  Tank angular velocity,
 //                  Turret relative angle,
 //                  Reload progress]
-// KAI Outputs(7): [Forward
-//                  Backward,
-//                  Chassis Right, 
-//                  Chassis Left,
-//                  Turret Right,
-//                  Turret Left,
+// KAI Outputs(7): [-1: Backward 0: nothing 1: Forward,
+//                  -1: Chassis Left 0: nothing 1: Chassis Right,
+//                  -1: Turret Left 0: nothing 1: Turret Right,
 //                  Turret Shoot]
 
 const inN = 9;
-const layers = [[LEAKY_RELU, 8], [LEAKY_RELU, 8], [SIGMOID, 7]];
+const layers = [ Array(8).fill(LEAKY_RELU), Array(8).fill(LEAKY_RELU), [TANH, TANH, TANH, SIGMOID]];
 const weights = null;
 const trainingDataSet = [];
 //loss_function: Callable
@@ -171,21 +168,21 @@ export class KAI {
         this.model = [];
         for (let l = 0; l < this.layers.length; l++) {
             this.model.push([]);
-            for (let n = 0; n < this.layers[l][1]; n++) {
+            for (let n = 0; n < this.layers[l].length; n++) {
                 if (weights === null) {
                     if (l === 0) {
                         var inN = this.inN;
                     } else {
-                        var inN = this.layers[l - 1][1];
+                        var inN = this.layers[l - 1].length;
                     }
                     if (l === this.layers.length - 1) {
                         var outN = 1;
                     } else {
-                        var outN = this.layers[l + 1][1];
+                        var outN = this.layers[l + 1].length;
                     }
                     this.model[l].push(
                         new Neuron(
-                            this.layers[l][0],
+                            this.layers[l][n],
                             null,
                             inN,
                             outN
@@ -194,7 +191,7 @@ export class KAI {
                 } else {
                     this.model[l].push(
                         new Neuron(
-                            this.layers[l][0],
+                            this.layers[l][n],
                             weights[l][n]
                         )
                     );
@@ -211,7 +208,7 @@ export class KAI {
         this.inputs = inputs;
         for (let l = 0; l < this.layers.length; l++) {
             this.outputs = [];
-            for (let n = 0; n < this.layers[l][1]; n++) {
+            for (let n = 0; n < this.layers[l].length; n++) {
                 this.model[l][n].calculate(this.inputs);
                 this.outputs.push(this.model[l][n].output);
             }
@@ -220,7 +217,7 @@ export class KAI {
     }
     distributeError(errorGradients) {
         for (let l = this.layers.length - 1; l >= 0; l--) {
-            for (let n = 0; n < this.layers[l][1]; n++) {
+            for (let n = 0; n < this.layers[l].length; n++) {
                 if (l >= this.layers.length - 1) {
                     this.model[l][n].delta =
                         errorGradients[n] *
