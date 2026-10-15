@@ -263,7 +263,7 @@ class Projectile{
     }
     update() {
         if (this.flying) {
-            for (var i = 0; i < projectileSteps; i++){
+            for (let i = 0; i < projectileSteps; i++){
                 this.deltapos += projectileSpeed/projectileSteps * this.tank.game.time * this.tank.pixelPerMeter; 
                 this.bullet.position.x+=this.speedX * this.tank.game.time * this.tank.pixelPerMeter; 
                 this.bullet.position.y+=this.speedY * this.tank.game.time * this.tank.pixelPerMeter; 
@@ -789,6 +789,7 @@ class Tank{
             this.updateProjection()
             this.handleProjectiles()
         }
+        this.updateProjectiles()
     }
     handleProjectiles(){
         if (!this.armed){
@@ -798,7 +799,8 @@ class Tank{
             this.reload=projectileReloadTime
             this.armed=true
         }
-        
+    }
+    updateProjectiles(){
         for (let i = 0; i < this.projectiles.length; i++){
             this.projectiles[i].update()
             if (this.projectiles[i].dead) {
