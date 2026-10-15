@@ -6,8 +6,8 @@ import { RGBELoader } from "jsm/loaders/RGBELoader.js";
 import {OrbitControls} from "jsm/controls/OrbitControls.js"
 
 //constants
-const locked = false;
-const kaiTesting = true;
+const locked = true;
+const kaiTesting = false;
 const tankWidth=3.7
 const chassisBoxLength=690
 const chassisBoxWidth=463
@@ -21,6 +21,8 @@ const timescale=1
 const tractionForceRatio=0.2
 const projectileReloadTime=1.5;
 const projectileRenderDistance = 100;
+const projectileSpeed = 1500;
+const projectileSteps = 150;
 const maxVelocity=5
 const trackSoundLimit = 1
 const maxAngVel=0.7
@@ -245,7 +247,7 @@ class Projectile{
         this.bullet.position.set(position.x,position.y,position.z)
         this.tank.game.scene.add(this.bullet)
 
-        var forward = new THREE.Vector3(0, 0, 10);
+        var forward = new THREE.Vector3(0, 0, projectileSpeed/projectileSteps);
         forward.applyQuaternion(orientation);
         this.speedX=forward.x + this.tank.velocity.x;
         this.speedY=forward.y;
@@ -261,40 +263,41 @@ class Projectile{
     }
     update() {
         if (this.flying) {
-            this.deltapos += 10 * this.tank.game.time * this.tank.pixelPerMeter; 
-            this.bullet.position.x+=this.speedX * this.tank.game.time * this.tank.pixelPerMeter; 
-            this.bullet.position.y+=this.speedY * this.tank.game.time * this.tank.pixelPerMeter; 
-            this.bullet.position.z+=this.speedZ * this.tank.game.time * this.tank.pixelPerMeter; 
-            for (let tank of this.tank.game.tankList) {
-                if (getDistance(tank.obj.position, this.bullet.position) < tankHitboxRadius) {
-                    if (tank.hit()){
-                        this.dead = true;
-                    } else {
-                        const explosionPosition = this.bullet.position.clone();
+            for (var i = 0; i < projectileSteps; i++){
+                this.deltapos += projectileSpeed/projectileSteps * this.tank.game.time * this.tank.pixelPerMeter; 
+                this.bullet.position.x+=this.speedX * this.tank.game.time * this.tank.pixelPerMeter; 
+                this.bullet.position.y+=this.speedY * this.tank.game.time * this.tank.pixelPerMeter; 
+                this.bullet.position.z+=this.speedZ * this.tank.game.time * this.tank.pixelPerMeter; 
+                for (let tank of this.tank.game.tankList) {
+                    if (getDistance(tank.obj.position, this.bullet.position) < tankHitboxRadius) {
+                        if (tank.hit()){
+                            this.dead = true;
+                        } else {
+                            const explosionPosition = this.bullet.position.clone();
 
-                        tank.obj.worldToLocal(explosionPosition);
+                            tank.obj.worldToLocal(explosionPosition);
 
-                        this.explosion = new Explosion(this.tank.game, tank.obj, explosionPosition, false);
+                            this.explosion = new Explosion(this.tank.game, tank.obj, explosionPosition, false);
+                        }
+                        this._dispose();
+                        this.hit = true;
+                        this.flying = false;
+                        return;
                     }
+                }
+                if (this.tank.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
+                    this.explosion = new Explosion(this.tank.game, this.tank.game.scene, this.bullet.position, false);
                     this._dispose();
-                    this.hit = true;
+                    this.flying = false;
+                    return;
+                }
+                if (this.deltapos > projectileRenderDistance * this.tank.pixelPerMeter) {
+                    this._dispose();
+                    this.dead = true;
                     this.flying = false;
                     return;
                 }
             }
-            if (this.tank.terrain.heightAt(this.bullet.position.x, this.bullet.position.z) >= this.bullet.position.y) {
-                this.explosion = new Explosion(this.tank.game, this.tank.game.scene, this.bullet.position, false);
-                this._dispose();
-                this.flying = false;
-                return;
-            }
-            if (this.deltapos > projectileRenderDistance * this.tank.pixelPerMeter) {
-                this._dispose();
-                this.dead = true;
-                this.flying = false;
-                return;
-            }
-            
         }
         if (this.explosion != null) {
             this.explosion.update();
